@@ -1,3 +1,4 @@
+
 import os
 import pandas as pd
 import shutil
@@ -111,8 +112,7 @@ def check_ref_keywords(text):
             return reasons_dict["valid"]
 
         # Check for reference documentation (AMM, SRM, etc.)
-        ref_keywords = ["AMM", "SRM", "CMM", "EMM", "SOPM", "SWPM", "IPD", "FIM", "TSM", "IPC", "SB", "AD", "NTO",
-                        "MEL", "NEF", "MME", "LMM"]
+        ref_keywords = ["AMM", "SRM", "CMM", "EMM", "SOPM", "SWPM", "IPD", "FIM", "TSM", "IPC", "SB", "AD", "NTO", "MEL", "NEF", "MME", "LMM"]
         ref_keywords_pattern = r'\b(?:' + '|'.join(ref_keywords) + r')\b'
         iaw_ref_per_keywords = ["IAW", "REF", "PER", "I.A.W"]
         iaw_ref_per_pattern = r'\b(?:' + '|'.join(iaw_ref_per_keywords) + r')\b'
@@ -133,8 +133,12 @@ def check_ref_keywords(text):
         elif not re.search(ref_keywords_pattern, text, re.IGNORECASE):  # If there's no valid reference, flag it
             reasons.append("Missing revision date")
 
-        # If no issues, return valid documentation
-        return ', '.join(reasons) if reasons else "Valid documentation"
+        # **Fix applied here**: "Valid documentation" should only appear when there are no issues
+        if "Missing reference documentation" not in reasons and "Missing revision date" not in reasons:
+            return reasons_dict["valid"]
+
+        # Return combined reasons (if any missing parts)
+        return ', '.join(reasons)
 
     return 'Error'
 
