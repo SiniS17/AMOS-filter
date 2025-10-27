@@ -1,0 +1,2 @@
+GG_API_KEY=AIzaSyBTfcxSglwj5oYPhsipFzt-Rpt3rNhgmjY
+GG_FOLDER_ID=1NmFQYNdsjJcejaM5EZwGdRsyRKXsxay7
