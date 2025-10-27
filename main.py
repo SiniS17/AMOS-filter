@@ -17,7 +17,7 @@ reasons_dict = {
 # Keywords to search for in the "text" column
 ref_keywords = ["AMM", "SRM", "CMM", "EMM", "SOPM", "SWPM", "IPD", "FIM", "TSM", "IPC", "SB", "AD", "NTO", "MEL", "NEF",
                 "MME", "LMM"]
-rev_keywords = ["REV", "EXP", "DEADLINE"]
+rev_keywords = ["REV", "EXP", "DEADLINE", "REV DATE"]
 invalid_characters = r'[\\/:*?"<>|]'  # Invalid characters for folder names
 iaw_ref_per_keywords = ["IAW", "REF", "PER", "I.A.W"]  # Keywords for IAW_sym_keyword
 
@@ -96,7 +96,7 @@ def create_log_file(wp_value, output_file, missing_rev_count, missing_ref_count,
     print(f"Log file created at: {log_filename}")
 
 
-# Function to check reference keywords and write the reasons into the "Reason" column
+# Function to check ref_keywords and write the reasons into the "Reason" column
 def check_ref_keywords(text):
     reasons = []
 
@@ -110,27 +110,34 @@ def check_ref_keywords(text):
         if any(phrase in text for phrase in skip_phrases):
             return reasons_dict["valid"]
 
-        # Check if ref_keywords and IAW_sym_keywords are present together
-        ref_keywords_pattern = r'\b(?:' + '|'.join(ref_keywords) + r')\b'  # Match whole words for ref_keywords
-        iaw_ref_per_pattern = r'\b(?:' + '|'.join(iaw_ref_per_keywords) + r')\b'  # Match IAW, REF, PER
+        # Check for reference documentation (AMM, SRM, etc.)
+        ref_keywords = ["AMM", "SRM", "CMM", "EMM", "SOPM", "SWPM", "IPD", "FIM", "TSM", "IPC", "SB", "AD", "NTO",
+                        "MEL", "NEF", "MME", "LMM"]
+        ref_keywords_pattern = r'\b(?:' + '|'.join(ref_keywords) + r')\b'
+        iaw_ref_per_keywords = ["IAW", "REF", "PER", "I.A.W"]
+        iaw_ref_per_pattern = r'\b(?:' + '|'.join(iaw_ref_per_keywords) + r')\b'
 
-        # Missing reference documentation if no ref_keywords or IAW_sym_keywords
+        # Missing reference documentation if no ref_keywords or IAW_sym_keywords are present
         if not re.search(ref_keywords_pattern, text, re.IGNORECASE) or not re.search(iaw_ref_per_pattern, text,
                                                                                      re.IGNORECASE):
-            reasons.append(reasons_dict["ref"])
+            reasons.append("Missing reference documentation")
 
         # Check if "REV" is followed by a valid revision (any number is valid)
         rev_keywords_pattern = r'\bREV\s*\.?\s*(\d+)\b'  # Match REV followed by a number (e.g., REV 156, REV.156)
-        if not re.search(rev_keywords_pattern, text, re.IGNORECASE):
-            # Check if "EXP" or "DEADLINE" is followed by a valid date or time
-            exp_deadline_pattern = r'\b(?:EXP|DEADLINE)\s*(\d{2}[A-Z]{3}\d{2}|\d{1,2}/\d{1,2}/\d{4}|\d{4})\b'  # Match EXP or DEADLINE followed by date or year
-            if not re.search(exp_deadline_pattern, text, re.IGNORECASE):
-                reasons.append(reasons_dict["rev"])
+        rev_match = re.search(rev_keywords_pattern, text, re.IGNORECASE)
+        rev_date_pattern = r'\bREV\s*DATE\s*[:\-\.\s]*\d+\s*\(.*\)\b'  # Match REV DATE followed by revision number and date
 
-        # If there are no issues, it's valid documentation
-        return ', '.join(reasons) if reasons else reasons_dict["valid"]
+        # If REV or REV DATE is found, we consider it valid
+        if rev_match or re.search(rev_date_pattern, text, re.IGNORECASE):
+            reasons.append("Valid revision")
+        elif not re.search(ref_keywords_pattern, text, re.IGNORECASE):  # If there's no valid reference, flag it
+            reasons.append("Missing revision date")
+
+        # If no issues, return valid documentation
+        return ', '.join(reasons) if reasons else "Valid documentation"
 
     return 'Error'
+
 
 # Function to process the Excel file and add the "Reason" column based on ref_keywords
 def process_excel(file_path):
