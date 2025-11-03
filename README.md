@@ -1,94 +1,172 @@
-\# Google Drive File Download and Processing Script
+# Documentation Validator
 
+A Python tool that validates aviation maintenance documentation by checking for proper references (AMM, SRM, etc.) and revision dates.
 
+## Features
 
-This project is a Python script to download and process Excel files from Google Drive, based on the \*\*`wp`\*\* (work package) value in the file. The files are downloaded into specific folders named after the `wp` value. Once downloaded, the files are processed, and a processed output file is generated with timestamp-based naming.
+- ✅ Downloads Excel files from Google Drive
+- ✅ Validates documentation references (AMM, SRM, CMM, etc.)
+- ✅ Checks for revision dates and formats
+- ✅ Detects suspicious formatting patterns
+- ✅ Generates detailed validation reports
+- ✅ Creates log files with error statistics
 
+## Project Structure
 
+```
+Static filter/
+├── main.py                # Main script
+├── config.py              # Configuration and constants
+├── validators.py          # All validation functions
+├── drive_utils.py         # Google Drive functions
+├── excel_utils.py         # Excel processing functions
+├── link.txt               # Your API keys (not in repo)
+├── requirements.txt       # Python dependencies
+├── tests/                 # Testing folder
+│   └── test_validators.py
+├── DATA/                  # Output folder (created automatically)
+└── README.md             # This file
+```
 
-\## Features
+## Installation
 
-\- Download files from Google Drive to specific folders.
+1. Clone the repository
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-\- Automatically create folders based on `wp` value in the Excel file.
+3. Create a `link.txt` file in the root directory with your credentials:
+```
+GG_API_KEY=your_google_drive_api_key_here
+GG_FOLDER_ID=your_folder_id_here
+```
 
-\- Add filters to Excel columns.
+## Usage
 
-\- Process the Excel file and add a "Reason" column based on specific checks.
+### Running the Main Script
 
-&nbsp; 
+```bash
+python main.py
+```
 
-\## Requirements
+This will:
+1. Download the Excel file from Google Drive
+2. Validate all documentation entries
+3. Generate a processed file with validation results
+4. Create a log file with error statistics
 
-\- Python 3.x
+### Running Tests
 
-\- Google API Key and Folder ID for accessing Google Drive
+```bash
+# Using pytest
+python -m pytest tests/test_validators.py
 
+# Or directly
+python tests/test_validators.py
+```
 
+## Validation Rules
 
-\## Setup Instructions
+### Reference Documentation
+- **Valid**: Contains reference keywords (AMM, SRM, CMM, etc.)
+- **Missing reference documentation**: No reference keywords AND no linking words (IAW, REF, PER)
+- **Missing reference type**: Has linking words but no specific reference type
 
+### Revision Date
+- **Valid formats**: `REV 158`, `REV158`, `REV:158`, `REV.158`, `REV: 158`
+- **Suspicious**: Multiple spaces between REV and number (e.g., `REV  158`)
+- **Missing**: No revision information found
 
+### Skip Phrases
+These phrases automatically pass validation:
+- GET ACCESS / GAIN ACCESS / GAINED ACCESS
+- SPARE ORDERED / ORDERED SPARE
 
-1\. Clone this repository:
+## Output
 
-&nbsp;   ```bash
+### Processed Excel File
+Located in `DATA/{wp_value}/WP_{wp_value}_{timestamp}.xlsx`
 
-&nbsp;   git clone https://github.com/your-username/google-drive-excel-process.git
+Contains original data plus a "Reason" column with validation results:
+- "Valid documentation"
+- "Missing reference documentation"
+- "Missing reference type"
+- "Missing revision date"
+- "Suspicious revision format"
 
-&nbsp;   cd google-drive-excel-process
+### Log File
+Located in `DATA/{wp_value}/log/WP_{wp_value}_{timestamp}.txt`
 
-&nbsp;   ```
+Contains statistics:
+- Total rows with missing revision date
+- Total rows with missing reference documentation
+- Total rows with missing reference type
+- Total rows with suspicious revision format
+- Total rows with errors
 
+## Configuration
 
+Edit `config.py` to modify:
+- Reference keywords (AMM, SRM, etc.)
+- Linking keywords (IAW, REF, PER)
+- Skip phrases
+- Folder paths
 
-2\. Install the dependencies:
+## Example
 
-&nbsp;   ```bash
+Input text:
+```
+REMOVE AND KEEP FLOOR PANELS. REFER TO 787 AMM DMCB787-A-53-01-01-00B-520A-A REV 158
+```
 
-&nbsp;   pip install -r requirements.txt
+Output:
+```
+Reason: Valid documentation
+```
 
-&nbsp;   ```
+Input text:
+```
+DO INSPECTION TASK WITHOUT REFERENCE
+```
 
+Output:
+```
+Reason: Missing reference documentation, Missing revision date
+```
 
+## Development
 
-3\. Create a `link.txt` file in the root directory with the following structure:
+### Adding New Validation Rules
 
-&nbsp;   ```
+1. Add the rule to `validators.py`
+2. Update the reason dictionary in `config.py`
+3. Add tests to `tests/test_validators.py`
+4. Run tests to verify
 
-&nbsp;   GG\_API\_KEY=your\_google\_api\_key
+### Module Organization
 
-&nbsp;   GG\_FOLDER\_ID=your\_google\_folder\_id
+- **config.py**: All constants and configuration
+- **validators.py**: Validation logic (no I/O)
+- **drive_utils.py**: Google Drive operations
+- **excel_utils.py**: Excel file processing
+- **main.py**: Orchestrates the workflow
 
-&nbsp;   ```
+## Troubleshooting
 
+### "No files found in the folder"
+- Check your `GG_FOLDER_ID` in `link.txt`
+- Ensure the folder has at least one file
+- Verify API key has access to the folder
 
+### "API Key or Folder ID not found"
+- Ensure `link.txt` exists in the root directory
+- Check the format: `GG_API_KEY=...` and `GG_FOLDER_ID=...`
 
-4\. Run the script:
+### Import errors when running tests
+- Make sure you're running from the project root
+- The test file adds the parent directory to the path automatically
 
-&nbsp;   ```bash
+## License
 
-&nbsp;   python main.py
-
-&nbsp;   ```
-
-
-
-\## How It Works
-
-1\. \*\*Authentication\*\*: Uses the provided Google API Key to authenticate and access Google Drive.
-
-2\. \*\*File Download\*\*: The script dynamically downloads Excel files from the specified Google Drive folder and names them based on the `wp` value found in the file.
-
-3\. \*\*Processing\*\*: The file is processed, and a "Reason" column is added based on predefined rules.
-
-4\. \*\*Saving\*\*: The processed file is saved in the respective folder under the `DATA` directory.
-
-
-
-\## License
-
-This project is licensed under the MIT License - see the \[LICENSE](LICENSE) file for details.
-
-
-
+MIT License - feel free to use and modify as needed.

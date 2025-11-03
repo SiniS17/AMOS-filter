@@ -1,228 +1,65 @@
+"""
+Main script for documentation validation.
+Downloads Excel file from Google Drive, validates documentation references,
+and creates a report with validation results.
+"""
 
-import os
-import pandas as pd
-import shutil
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-import io
-import re
-from datetime import datetime
-
-# Reason dictionary
-reasons_dict = {
-    "valid": "Valid documentation",
-    "ref": "Missing reference documentation",
-    "rev": "Missing revision date"
-}
-
-# Keywords to search for in the "text" column
-ref_keywords = ["AMM", "SRM", "CMM", "EMM", "SOPM", "SWPM", "IPD", "FIM", "TSM", "IPC", "SB", "AD", "NTO", "MEL", "NEF",
-                "MME", "LMM"]
-rev_keywords = ["REV", "EXP", "DEADLINE", "REV DATE"]
-invalid_characters = r'[\\/:*?"<>|]'  # Invalid characters for folder names
-iaw_ref_per_keywords = ["IAW", "REF", "PER", "I.A.W"]  # Keywords for IAW_sym_keyword
+from drive_utils import (
+    authenticate_drive_api,
+    get_file_id_from_folder,
+    download_file_from_drive,
+    read_credentials_file
+)
+from excel_utils import process_excel
+from config import LINK_FILE
 
 
-# Function to authenticate with Google Drive API using API Key
-def authenticate_drive_api(api_key):
-    drive_service = build('drive', 'v3', developerKey=api_key)
-    return drive_service
-
-
-# Function to get the file ID from the folder (using the folder ID from link.txt)
-def get_file_id_from_folder(drive_service, folder_id):
-    results = drive_service.files().list(q=f"'{folder_id}' in parents", fields="files(id, name)").execute()
-    files = results.get('files', [])
-    if not files:
-        print('No files found in the folder.')
-        return None
-    file_id = files[0]['id']
-    print(f"File found: {files[0]['name']} with ID: {file_id}")
-    return file_id
-
-
-# Function to download file from Google Drive to a specific folder
-def download_file_from_drive(drive_service, file_id, wp_value):
-    # Create folder if it doesn't exist
-    wp_folder = os.path.join('DATA', wp_value)
-    os.makedirs(wp_folder, exist_ok=True)
-
-    # Define file path for the downloaded file
-    file_path = os.path.join(wp_folder, f'WP_{wp_value}_RAW.xlsx')
-
-    # Download the file
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.FileIO(file_path, 'wb')
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while done is False:
-        status, done = downloader.next_chunk()
-    print(f"File downloaded to {file_path}")
-    return file_path
-
-
-# Function to get a cleaned file name from the "wp" column
-def get_cleaned_filename(df):
-    if 'wp' in df.columns:
-        wp_value = df['wp'].dropna().iloc[0]
-        cleaned_wp_value = re.sub(r'[^\w\s]', ' ', wp_value)
-        cleaned_wp_value = cleaned_wp_value.replace(' ', '_')  # Replace spaces with underscores
-        return f"WP_{cleaned_wp_value}"
-    else:
-        print("No 'wp' column found in the file.")
-        return "WP_No_wp_found"
-
-
-# Function to sanitize folder name (replace invalid characters with underscores)
-def sanitize_folder_name(wp_value):
-    if isinstance(wp_value, str):
-        cleaned_wp_value = re.sub(invalid_characters, '_', wp_value)
-        return cleaned_wp_value
-    return "No_wp_found"
-
-
-# Function to create a log file with the counts
-def create_log_file(wp_value, output_file, missing_rev_count, missing_ref_count, total_errors):
-    log_folder = os.path.join('DATA', wp_value, 'log')
-    os.makedirs(log_folder, exist_ok=True)
-
-    log_filename = os.path.join(log_folder, os.path.basename(output_file).replace('.xlsx', '.txt'))
-
-    with open(log_filename, 'w') as log_file:
-        log_file.write(f"Log for file: {output_file}\n")
-        log_file.write(f"Total rows with missing revision date: {missing_rev_count}\n")
-        log_file.write(f"Total rows with missing reference documentation: {missing_ref_count}\n")
-        log_file.write(f"Total rows with errors: {total_errors}\n")
-
-    print(f"Log file created at: {log_filename}")
-
-
-# Function to check ref_keywords and write the reasons into the "Reason" column
-def check_ref_keywords(text):
-    reasons = []
-
-    if isinstance(text, str):
-        # Skip phrases to allow valid documentation
-        skip_phrases = [
-            "GET ACCESS", "GAIN ACCESS", "GAINED ACCESS", "ACCESS GAINED",
-            "SPARE ORDERED", "ORDERED SPARE"
-        ]
-
-        if any(phrase in text for phrase in skip_phrases):
-            return reasons_dict["valid"]
-
-        # Check for reference documentation (AMM, SRM, etc.)
-        ref_keywords = ["AMM", "SRM", "CMM", "EMM", "SOPM", "SWPM", "IPD", "FIM", "TSM", "IPC", "SB", "AD", "NTO", "MEL", "NEF", "MME", "LMM"]
-        ref_keywords_pattern = r'\b(?:' + '|'.join(ref_keywords) + r')\b'
-        iaw_ref_per_keywords = ["IAW", "REF", "PER", "I.A.W"]
-        iaw_ref_per_pattern = r'\b(?:' + '|'.join(iaw_ref_per_keywords) + r')\b'
-
-        # Missing reference documentation if no ref_keywords or IAW_sym_keywords are present
-        if not re.search(ref_keywords_pattern, text, re.IGNORECASE) or not re.search(iaw_ref_per_pattern, text,
-                                                                                     re.IGNORECASE):
-            reasons.append("Missing reference documentation")
-
-        # Check if "REV" is followed by a valid revision (any number is valid)
-        rev_keywords_pattern = r'\bREV\s*\.?\s*(\d+)\b'  # Match REV followed by a number (e.g., REV 156, REV.156)
-        rev_match = re.search(rev_keywords_pattern, text, re.IGNORECASE)
-        rev_date_pattern = r'\bREV\s*DATE\s*[:\-\.\s]*\d+\s*\(.*\)\b'  # Match REV DATE followed by revision number and date
-
-        # If REV or REV DATE is found, we consider it valid
-        if rev_match or re.search(rev_date_pattern, text, re.IGNORECASE):
-            reasons.append("Valid revision")
-        elif not re.search(ref_keywords_pattern, text, re.IGNORECASE):  # If there's no valid reference, flag it
-            reasons.append("Missing revision date")
-
-        # **Fix applied here**: "Valid documentation" should only appear when there are no issues
-        if "Missing reference documentation" not in reasons and "Missing revision date" not in reasons:
-            return reasons_dict["valid"]
-
-        # Return combined reasons (if any missing parts)
-        return ', '.join(reasons)
-
-    return 'Error'
-
-
-# Function to process the Excel file and add the "Reason" column based on ref_keywords
-def process_excel(file_path):
-    # Read the Excel file with row 1 as header
-    df = pd.read_excel(file_path, engine='openpyxl', header=0)
-
-    # Initialize counters
-    missing_rev_count = 0
-    missing_ref_count = 0
-    total_errors = 0
-
-    # Apply the check to each row in the "text" column and create a "Reason" column
-    df['Reason'] = df['text'].apply(lambda text: check_ref_keywords(text))
-
-    # Count errors
-    missing_rev_count = df['Reason'].str.contains("Missing revision date").sum()
-    missing_ref_count = df['Reason'].str.contains("Missing reference documentation").sum()
-    total_errors = missing_rev_count + missing_ref_count
-
-    # Get the folder name from the "wp" column and sanitize it
-    wp_value = df['wp'].dropna().iloc[0] if 'wp' in df.columns else "No_wp_found"
-    cleaned_folder_name = wp_value.replace(' ', '_')  # Sanitize wp value for folder name
-
-    # Define the path where the processed file will be saved (in the same folder as the downloaded file)
-    current_time = datetime.now().strftime("%I%p%M_%d_%m_%y").lower()
-    output_file = os.path.join('DATA', cleaned_folder_name, f"WP_{cleaned_folder_name}_{current_time}.xlsx")
-
-    # Create an ExcelWriter object with openpyxl engine
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, header=True)  # Write the data to Excel
-
-        # Access the workbook and the sheet
-        workbook = writer.book
-        sheet = workbook.active
-
-        # Add filter to the first row (header)
-        sheet.auto_filter.ref = sheet.dimensions  # Automatically apply filter to the entire range (including header)
-
-        # Save the workbook with the filter applied
-        workbook.save(output_file)
-
-    # Create a log file with error counts
-    create_log_file(cleaned_folder_name, output_file, missing_rev_count, missing_ref_count, total_errors)
-
-    print(f"Processed file saved at: {os.path.abspath(output_file)}")
-    return output_file
-
-
-# Main function to execute the process
 def main():
-    # Read the API key and folder ID from the link.txt file
-    with open('link.txt', 'r') as file:
-        content = file.readlines()
+    """
+    Main function to execute the documentation validation process.
 
-    api_key = None
-    folder_id = None
-    for line in content:
-        if line.startswith("GG_API_KEY="):
-            api_key = line.split('=')[1].strip()
-        elif line.startswith("GG_FOLDER_ID="):
-            folder_id = line.split('=')[1].strip()
+    Steps:
+    1. Read credentials from link.txt
+    2. Authenticate with Google Drive
+    3. Download the Excel file
+    4. Process and validate the file
+    5. Generate output with validation results
+    """
+    print("=" * 60)
+    print("Documentation Validator")
+    print("=" * 60 + "\n")
+
+    # Read the API key and folder ID from the link.txt file
+    api_key, folder_id = read_credentials_file(LINK_FILE)
 
     if not api_key or not folder_id:
-        print("API Key or Folder ID not found in link.txt.")
-        return
+        print("Error: API Key or Folder ID not found in link.txt.")
+        return None
 
     # Authenticate with Google Drive API using the API key
+    print("Authenticating with Google Drive...")
     drive_service = authenticate_drive_api(api_key)
 
     # Get the file ID from the folder
+    print("Finding file in folder...")
     file_id = get_file_id_from_folder(drive_service, folder_id)
     if not file_id:
-        print("No valid file found to download.")
-        return
+        print("Error: No valid file found to download.")
+        return None
 
-    # Download the file as a temp file and get wp_value from it
-    wp_value = "example_wp"  # This will be extracted from the Excel file dynamically
+    # Download the file (using a placeholder wp_value, will be updated from file)
+    print("Downloading file...")
+    wp_value = "temp_download"
     temp_file_path = download_file_from_drive(drive_service, file_id, wp_value)
 
-    # Process the downloaded Excel file and save it in the same folder
+    # Process the downloaded Excel file and save it with validation results
+    print("\nProcessing Excel file and validating documentation...")
     processed_file = process_excel(temp_file_path)
+
+    print("\n" + "=" * 60)
+    print("✓ Process completed successfully!")
+    print("=" * 60)
+
     return processed_file
 
 
