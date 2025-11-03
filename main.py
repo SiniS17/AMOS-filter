@@ -61,13 +61,13 @@ def download_file_from_drive(drive_service, file_id, wp_value):
     return file_path
 
 
-# Function to get a sanitized file name from the "wp" column
-def get_sanitized_filename(df):
+# Function to get a cleaned file name from the "wp" column
+def get_cleaned_filename(df):
     if 'wp' in df.columns:
         wp_value = df['wp'].dropna().iloc[0]
-        sanitized_wp_value = re.sub(r'[^\w\s]', ' ', wp_value)
-        sanitized_wp_value = sanitized_wp_value.replace(' ', '_')  # Replace spaces with underscores
-        return f"WP_{sanitized_wp_value}"
+        cleaned_wp_value = re.sub(r'[^\w\s]', ' ', wp_value)
+        cleaned_wp_value = cleaned_wp_value.replace(' ', '_')  # Replace spaces with underscores
+        return f"WP_{cleaned_wp_value}"
     else:
         print("No 'wp' column found in the file.")
         return "WP_No_wp_found"
@@ -76,8 +76,8 @@ def get_sanitized_filename(df):
 # Function to sanitize folder name (replace invalid characters with underscores)
 def sanitize_folder_name(wp_value):
     if isinstance(wp_value, str):
-        sanitized_wp_value = re.sub(invalid_characters, '_', wp_value)
-        return sanitized_wp_value
+        cleaned_wp_value = re.sub(invalid_characters, '_', wp_value)
+        return cleaned_wp_value
     return "No_wp_found"
 
 
@@ -163,11 +163,11 @@ def process_excel(file_path):
 
     # Get the folder name from the "wp" column and sanitize it
     wp_value = df['wp'].dropna().iloc[0] if 'wp' in df.columns else "No_wp_found"
-    sanitized_folder_name = wp_value.replace(' ', '_')  # Sanitize wp value for folder name
+    cleaned_folder_name = wp_value.replace(' ', '_')  # Sanitize wp value for folder name
 
     # Define the path where the processed file will be saved (in the same folder as the downloaded file)
     current_time = datetime.now().strftime("%I%p%M_%d_%m_%y").lower()
-    output_file = os.path.join('DATA', sanitized_folder_name, f"WP_{sanitized_folder_name}_{current_time}.xlsx")
+    output_file = os.path.join('DATA', cleaned_folder_name, f"WP_{cleaned_folder_name}_{current_time}.xlsx")
 
     # Create an ExcelWriter object with openpyxl engine
     with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
@@ -184,7 +184,7 @@ def process_excel(file_path):
         workbook.save(output_file)
 
     # Create a log file with error counts
-    create_log_file(sanitized_folder_name, output_file, missing_rev_count, missing_ref_count, total_errors)
+    create_log_file(cleaned_folder_name, output_file, missing_rev_count, missing_ref_count, total_errors)
 
     print(f"Processed file saved at: {os.path.abspath(output_file)}")
     return output_file
