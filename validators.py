@@ -1,149 +1,311 @@
 """
-Validation functions for documentation checker.
-Contains all logic for checking references, revisions, and keywords.
+validators.py - SPLIT VERSION with SEQ filtering
+Updated to automatically mark SEQ 1.xx, 2.xx, 3.xx, 10.xx as Valid
+
+Split "Missing reference/reference type" into two separate statuses:
+1. "Missing reference" - No reference documents found at all
+2. "Missing reference type" - Has DMC/doc ID but no AMM/SRM/etc. prefix
+
+Returns 5 validation states:
+- "Valid"
+- "Missing reference" (no AMM/SRM/etc. at all)
+- "Missing reference type" (has DMC but no AMM/SRM/etc.)
+- "Missing revision"
+- "N/A"
 """
 
 import re
-from config import REASONS_DICT, REF_KEYWORDS, IAW_KEYWORDS, SKIP_PHRASES
+from config import REF_KEYWORDS, IAW_KEYWORDS, SKIP_PHRASES
+
+# Document ID pattern
+DOC_ID_PATTERN = re.compile(r'\b[A-Z0-9]{1,4}[0-9A-Z\-]{0,}\d+\b', re.IGNORECASE)
+
+# DMC pattern - specifically for Data Module Code detection
+DMC_PATTERN = re.compile(r'\bDMC-?[A-Z0-9\-]+\b', re.IGNORECASE)
+
+# B787 document pattern (without AMM/SRM prefix)
+B787_DOC_PATTERN = re.compile(r'\bB787-[A-Z0-9\-]+\b', re.IGNORECASE)
+
+# Data Module Task pattern
+DATA_MODULE_TASK_TEXT = re.compile(r'\bDATA\s+MODULE\s+TASK\b', re.IGNORECASE)
+
+# Document type words pattern
+DOC_TYPE_WORDS = re.compile(
+    r'\b(?:SB|NDT\s+REPORT|NDT|SERVICE\s+BULLETIN)\b',
+    re.IGNORECASE
+)
+
+# Standard revision patterns
+REV_PATTERN = re.compile(r'\bREV\s*[:\.]?\s*\d+\b', re.IGNORECASE)
+ISSUE_PATTERN = re.compile(r'\bISSUE\s*[:\.]?\s*\d+\b', re.IGNORECASE)
+ISSUED_SD_PATTERN = re.compile(r'\bISSUED\s+SD\.?\s*\d+\b', re.IGNORECASE)
+TAR_PATTERN = re.compile(r'\bTAR\s*\d+\b', re.IGNORECASE)
+
+# Date-based revision patterns
+EXP_DATE_PATTERN = re.compile(
+    r'\b(?:EXP|DEADLINE|DUE\s+DATE|REV\s+DATE)\s*[:\.]?\s*\d{1,2}[-/]?[A-Z]{3}[-/]?\d{2,4}\b',
+    re.IGNORECASE
+)
+DEADLINE_DATE_PATTERN = re.compile(
+    r'\b(?:EXP|DEADLINE|DUE\s+DATE|REV\s+DATE)\s*[:\.]?\s*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b',
+    re.IGNORECASE
+)
+
+# Pattern for "REFERENCED AMM/SRM/etc."
+REFERENCED_PATTERN = re.compile(
+    r'\bREFERENCED\s+(?:' + '|'.join(re.escape(k) for k in REF_KEYWORDS) + r')\b',
+    re.IGNORECASE
+)
+
+# Special document patterns (no explicit REV required)
+NDT_REPORT_PATTERN = re.compile(r'\bNDT\s+REPORT\s+[A-Z0-9\-]+\b', re.IGNORECASE)
+SB_FULL_PATTERN = re.compile(r'\bSB\s+[A-Z0-9]{1,5}-[A-Z0-9\-]+\b', re.IGNORECASE)
+DATA_MODULE_TASK_PATTERN = re.compile(r'\bDATA\s+MODULE\s+TASK\s+\d+\b', re.IGNORECASE)
 
 
-def has_keyword_match(text, keywords, word_boundary=True):
+def is_seq_auto_valid(seq_value):
     """
-    Check if any keyword exists in text as a standalone word.
+    Check if SEQ should be automatically marked as Valid.
+    Returns True for SEQ patterns: 1.xx, 2.xx, 3.xx, 10.xx
 
     Args:
-        text: String to search in
-        keywords: List of keywords to search for
-        word_boundary: If True, enforce word boundaries (AMM matches, but not in HAMMER)
+        seq_value: The SEQ field value (can be string, float, or int)
 
     Returns:
-        bool: True if any keyword is found
+        bool: True if SEQ matches auto-valid patterns
     """
-    if not isinstance(text, str):
+    if seq_value is None:
         return False
 
-    if word_boundary:
-        # Use word boundaries to avoid matching within words
-        pattern = r'\b(?:' + '|'.join(re.escape(k) for k in keywords) + r')\b'
-    else:
-        pattern = '|'.join(re.escape(k) for k in keywords)
+    # Convert to string and strip whitespace
+    seq_str = str(seq_value).strip()
 
-    return bool(re.search(pattern, text, re.IGNORECASE))
+    if not seq_str:
+        return False
+
+    # Check for patterns: 1.xx, 2.xx, 3.xx, 10.xx
+    # This handles: "1.1", "1.10", "2.5", "3.12", "10.1", "10.99", etc.
+    if seq_str.startswith('1.') or \
+       seq_str.startswith('2.') or \
+       seq_str.startswith('3.') or \
+       seq_str.startswith('10.'):
+        return True
+
+    return False
 
 
-def has_skip_phrase(text):
+def fix_common_typos(text: str) -> str:
+    """Normalize common typos in maintenance documentation."""
+    if not isinstance(text, str):
+        return text
+
+    t = text
+    t = re.sub(r'(?i)\bREV[:\.]?\s*(\d+)\b', r'REV \1', t)
+    t = re.sub(r'(?i)\brev(\d+)\b', r'rev \1', t)
+    t = re.sub(r'([A-Za-z0-9\)\]])rev(\d+)\b', r'\1 rev \2', t, flags=re.IGNORECASE)
+    t = re.sub(r'(?i)\bREF([A-Z])', r'REF \1', t)
+
+    for ref in REF_KEYWORDS:
+        t = re.sub(fr'(?i)\b({re.escape(ref)})(\d)', r'\1 \2', t)
+
+    t = re.sub(r'\s{2,}', ' ', t)
+    return t
+
+
+def contains_skip_phrase(text: str) -> bool:
     """Check if text contains phrases that should skip validation."""
     if not isinstance(text, str):
         return False
+    up = text.upper()
+    return any(phrase in up for phrase in SKIP_PHRASES)
 
-    return any(phrase in text.upper() for phrase in SKIP_PHRASES)
+
+def has_referenced_pattern(text: str) -> bool:
+    """Check if text uses 'REFERENCED AMM/SRM/etc.' pattern."""
+    if not isinstance(text, str):
+        return False
+    return bool(REFERENCED_PATTERN.search(text))
 
 
-def has_reference_keyword(text):
+def has_ndt_report(text: str) -> bool:
+    """Check for NDT REPORT pattern with document ID."""
+    if not isinstance(text, str):
+        return False
+    return bool(NDT_REPORT_PATTERN.search(text))
+
+
+def has_sb_full_number(text: str) -> bool:
+    """Check for Service Bulletin with full number."""
+    if not isinstance(text, str):
+        return False
+    return bool(SB_FULL_PATTERN.search(text))
+
+
+def has_data_module_task(text: str) -> bool:
+    """Check for DATA MODULE TASK pattern."""
+    if not isinstance(text, str):
+        return False
+    return bool(DATA_MODULE_TASK_PATTERN.search(text))
+
+
+def has_primary_reference(text: str) -> bool:
+    """Check if text contains a primary reference keyword (AMM, SRM, CMM, etc.)."""
+    if not isinstance(text, str):
+        return False
+    pattern = re.compile(
+        r'\b(?:' + '|'.join(re.escape(k) for k in REF_KEYWORDS) + r')\b',
+        re.IGNORECASE
+    )
+    return bool(pattern.search(text))
+
+
+def has_dmc_or_doc_id(text: str) -> bool:
     """
-    Check if text contains a reference documentation keyword (AMM, SRM, etc.).
+    Check if text contains DMC, B787 doc format, or DATA MODULE TASK.
+    These indicate a document reference but without the type (AMM/SRM/etc.).
     """
     if not isinstance(text, str):
         return False
 
-    return has_keyword_match(text, REF_KEYWORDS, word_boundary=True)
+    # Check for DMC pattern
+    if DMC_PATTERN.search(text):
+        return True
+
+    # Check for B787 document pattern
+    if B787_DOC_PATTERN.search(text):
+        return True
+
+    # Check for "DATA MODULE TASK" text (without number)
+    if DATA_MODULE_TASK_TEXT.search(text):
+        return True
+
+    return False
 
 
-def has_iaw_keyword(text):
-    """
-    Check if text contains a linking keyword (IAW, REF, PER).
-    """
+def has_iaw_keyword(text: str) -> bool:
+    """Check if text contains linking words (IAW, REF, PER)."""
+    if not isinstance(text, str):
+        return False
+    pattern = re.compile(
+        r'\b(?:' + '|'.join(re.escape(k) for k in IAW_KEYWORDS) + r')\b',
+        re.IGNORECASE
+    )
+    return bool(pattern.search(text))
+
+
+def has_revision(text: str) -> bool:
+    """Check if text contains any revision indicator."""
     if not isinstance(text, str):
         return False
 
-    return has_keyword_match(text, IAW_KEYWORDS, word_boundary=True)
+    if REV_PATTERN.search(text):
+        return True
+    if ISSUE_PATTERN.search(text):
+        return True
+    if ISSUED_SD_PATTERN.search(text):
+        return True
+    if TAR_PATTERN.search(text):
+        return True
+    if EXP_DATE_PATTERN.search(text):
+        return True
+    if DEADLINE_DATE_PATTERN.search(text):
+        return True
+
+    return False
 
 
-def has_valid_revision(text):
+def check_ref_keywords(text, seq_value=None):
     """
-    Check if text contains a valid revision reference.
-    Valid patterns:
-    - REV followed by a number with standard separators: REV158, REV 158, REV:158, REV.158
-    - REV DATE followed by number and date (e.g., REV DATE: 15 (01-Jan-2024))
+    SPLIT validation function - returns 5 states:
+    - "Valid"
+    - "Missing reference" - No reference documents (AMM/SRM/etc.) at all
+    - "Missing reference type" - Has DMC/doc ID but no AMM/SRM/etc.
+    - "Missing revision"
+    - "N/A"
 
-    Returns:
-        tuple: (has_revision: bool, is_suspicious: bool)
+    NEW: If seq_value matches auto-valid patterns (1.xx, 2.xx, 3.xx, 10.xx),
+         returns "Valid" immediately without further validation.
+
+    LOGIC FLOW:
+    0. Check SEQ - if auto-valid pattern, return "Valid"
+    1. Preserve N/A/blank
+    2. Skip phrases → Valid
+    3. Special patterns (REFERENCED, NDT, SB, DATA MODULE TASK)
+    4. Check for primary reference (AMM/SRM/etc.)
+       - If NO primary AND NO DMC/doc ID → "Missing reference"
+       - If NO primary BUT HAS DMC/doc ID → "Missing reference type"
+       - If HAS primary → check revision
     """
-    if not isinstance(text, str):
-        return False, False
 
-    # Pattern 1: REV followed by number with valid separators (space, colon, dot, or nothing)
-    # Valid: REV158, REV 158, REV:158, REV.158, REV: 158, REV. 158
-    valid_rev_pattern = r'\bREV\s*[:\.]?\s*(\d+)\b'
+    # ========== STEP 0: Check SEQ for auto-valid patterns ==========
+    if seq_value is not None and is_seq_auto_valid(seq_value):
+        return "Valid"
 
-    # Pattern 2: REV with multiple spaces (suspicious)
-    # Suspicious: REV  158 (2+ spaces), REV   158 (3+ spaces)
-    suspicious_rev_pattern = r'\bREV\s{2,}(\d+)\b'
+    # ========== STEP 1: Preserve N/A / blank / None ==========
+    if text is None:
+        return "N/A"
+    if isinstance(text, float):
+        return "N/A"
 
-    # Pattern 3: REV DATE with number and date
-    rev_date_pattern = r'\bREV\s*DATE\s*[:\-\.\s]*\d+\s*\([^)]+\)'
+    stripped = str(text).strip()
+    if stripped.upper() in ["N/A", "NA", "NONE", ""]:
+        return stripped
 
-    # Check for valid revision
-    valid_rev_match = re.search(valid_rev_pattern, text, re.IGNORECASE)
-    suspicious_rev_match = re.search(suspicious_rev_pattern, text, re.IGNORECASE)
-    rev_date_match = re.search(rev_date_pattern, text, re.IGNORECASE)
+    # ========== STEP 2: Skip phrases ==========
+    if contains_skip_phrase(stripped):
+        return "Valid"
 
-    has_revision = bool(valid_rev_match or rev_date_match)
-    is_suspicious = bool(suspicious_rev_match)
+    # ========== STEP 3: Fix typos ==========
+    cleaned = fix_common_typos(stripped)
 
-    return has_revision, is_suspicious
+    # ========== STEP 4: Check for "REFERENCED" pattern ==========
+    if has_referenced_pattern(cleaned):
+        return "Valid"
 
+    # ========== STEP 5: Special document patterns ==========
 
-def check_ref_keywords(text):
-    """
-    Layered validation of text for documentation requirements.
+    # 5A: NDT REPORT with doc ID
+    if has_ndt_report(cleaned):
+        return "Valid"
 
-    New logic:
-    - If BOTH IAW and reference keywords are missing → "Missing reference documentation"
-    - If ONLY reference keyword is missing (but IAW present) → "Missing reference type"
-    - If reference keyword present (regardless of IAW) → Valid for reference check
-    - Separately check for revision date
-    - Flag suspicious revision formats (multiple spaces)
+    # 5B: DATA MODULE TASK + SB reference
+    if has_data_module_task(cleaned) and has_sb_full_number(cleaned):
+        return "Valid"
 
-    Returns:
-        str: Reason code indicating validation status
-    """
-    if not isinstance(text, str):
-        return 'Error'
+    # 5C: SB with full number + linking word
+    iaw = has_iaw_keyword(cleaned)
+    if has_sb_full_number(cleaned) and iaw:
+        return "Valid"
 
-    # Layer 1: Check for skip phrases (override all validation)
-    if has_skip_phrase(text):
-        return REASONS_DICT["valid"]
+    # ========== STEP 6: Check for PRIMARY reference ==========
+    primary = has_primary_reference(cleaned)
+    has_dmc = has_dmc_or_doc_id(cleaned)
 
-    # Layer 2: Check reference documentation
-    has_ref = has_reference_keyword(text)
-    has_iaw = has_iaw_keyword(text)
+    # NEW LOGIC: Split into two statuses
+    if not primary:
+        # Check if there's a DMC or document ID
+        if has_dmc:
+            # Has DMC/doc ID but no AMM/SRM/etc. → "Missing reference type"
+            # Examples:
+            # - "REFER TO DMC-B787-A-57-41-10-00A-720A-A REV 158"
+            # - "REFER TO B787-A-53-00-0093-00A-933A-D ISSUE 001 DATA MODULE TASK 2"
+            return "Missing reference type"
+        else:
+            # No reference documents at all → "Missing reference"
+            # Examples:
+            # - "DONE SATIS"
+            # - "C/O SATIS"
+            # - "RH CHECK VALVE INSPECTION C/O SATIS"
+            return "Missing reference"
 
-    # Layer 3: Check for revision information
-    has_rev, is_suspicious_rev = has_valid_revision(text)
+    # ========== STEP 7: Has primary reference, check revision ==========
+    if has_revision(cleaned):
+        return "Valid"
 
-    # Build reason based on what's missing
-    reasons = []
+    # ========== STEP 8: Special case - doc ID + linking word ==========
+    doc_id = DOC_ID_PATTERN.search(cleaned)
+    if doc_id and iaw:
+        return "Valid"
 
-    # Reference logic:
-    if not has_ref and not has_iaw:
-        # Both missing → Missing reference documentation
-        reasons.append(REASONS_DICT["ref"])
-    elif not has_ref and has_iaw:
-        # Only reference keyword missing → Missing the reference type
-        reasons.append(REASONS_DICT["ref_type"])
-    # If has_ref (regardless of has_iaw) → Valid, no error added
-
-    # Revision logic:
-    if is_suspicious_rev:
-        # Has revision but format is suspicious
-        reasons.append(REASONS_DICT["suspicious_rev"])
-    elif not has_rev:
-        # No revision found at all
-        reasons.append(REASONS_DICT["rev"])
-
-    # If nothing is missing, it's valid
-    if not reasons:
-        return REASONS_DICT["valid"]
-
-    return ', '.join(reasons)
+    # ========== STEP 9: Has reference but missing revision ==========
+    return "Missing revision"
