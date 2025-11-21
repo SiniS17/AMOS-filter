@@ -47,7 +47,7 @@ GG_FOLDER_ID=your_folder_id_here
 ### Running the Main Script
 
 ```bash
-python main.py
+python main_REF_REV_Filter.py
 ```
 
 This will:
