@@ -268,12 +268,22 @@ def process_excel(file_path):
 
         orig_rows = df.shape[0]
 
-        # ========== STEP 3: Prepare columns ==========
+        # In excel_utils.py, update the process_excel function
+        # Find the section around line 200-250 where validation is applied
+
+        # BEFORE (old code):
+        # df['Reason'] = df.apply(
+        #     lambda row: check_ref_keywords(row['wo_text_action.text'], row['SEQ']),
+        #     axis=1
+        # )
+
+        # AFTER (new code with header):
+
+        # ========== STEP 3: Prepare columns (UPDATED) ==========
         print("\n2. Preparing data for validation...")
 
-        # Prepare wo_text_action.text column
+        # Prepare wo_text_action.text column (existing code)
         if 'wo_text_action.text' not in df.columns:
-            # Try to find wo_text_action.text column
             candidates = [c for c in df.columns if 'wo_text_action.text' in str(c).lower()]
             if candidates:
                 df = df.rename(columns={candidates[0]: 'wo_text_action.text'})
@@ -282,37 +292,50 @@ def process_excel(file_path):
                 df['wo_text_action.text'] = "N/A"
                 print("   ⚠️ No wo_text_action.text column found, created empty column")
 
-        # Replace NaN with "N/A"
         df['wo_text_action.text'] = df['wo_text_action.text'].fillna("N/A").astype(str)
 
-        # Prepare SEQ column
+        # Prepare SEQ column (existing code)
         if 'SEQ' not in df.columns:
-            # Try to find SEQ column (case-insensitive)
             seq_candidates = [c for c in df.columns if c.upper() == 'SEQ']
             if seq_candidates:
                 df = df.rename(columns={seq_candidates[0]: 'SEQ'})
                 print(f"   ✓ Found SEQ column: '{seq_candidates[0]}'")
             else:
-                # No SEQ column found, create empty one
                 df['SEQ'] = None
                 print("   ⚠️ No SEQ column found, validation will proceed normally")
 
-        # Fill SEQ NaN values with empty string
         df['SEQ'] = df['SEQ'].fillna("")
 
-        # ========== STEP 4: Apply Validation with SEQ ==========
+        # NEW: Prepare wo_text_action.header column
+        if 'wo_text_action.header' not in df.columns:
+            header_candidates = [c for c in df.columns if 'wo_text_action.header' in str(c).lower()]
+            if header_candidates:
+                df = df.rename(columns={header_candidates[0]: 'wo_text_action.header'})
+                print(f"   ✓ Found header column: '{header_candidates[0]}'")
+            else:
+                df['wo_text_action.header'] = None
+                print("   ⚠️ No wo_text_action.header column found, validation will proceed normally")
+
+        df['wo_text_action.header'] = df['wo_text_action.header'].fillna("")
+
+        # ========== STEP 4: Apply Validation with SEQ and HEADER (UPDATED) ==========
         print("\n3. Validating documentation references...")
         print("   ℹ️ SEQ 1.xx, 2.xx, 3.xx, 10.xx will be marked as Valid automatically")
+        print("   ℹ️ Headers with CLOSE UP, JOB SET UP, OPEN/CLOSE ACCESS, GENERAL will be marked as Valid")
 
-        # Apply validation with SEQ parameter
+        # Apply validation with both SEQ and HEADER parameters
         df['Reason'] = df.apply(
-            lambda row: check_ref_keywords(row['wo_text_action.text'], row['SEQ']),
+            lambda row: check_ref_keywords(
+                row['wo_text_action.text'],
+                row['SEQ'],
+                row['wo_text_action.header']  # NEW: Pass header to validation
+            ),
             axis=1
         )
 
         print("   ✓ Validation complete")
 
-        # ========== STEP 5: Calculate Statistics (SIMPLIFIED) ==========
+        # ========== STEP 5: Calculate Statistics (add header count) ==========
         counts = {
             'orig_rows': orig_rows,
             'out_rows': int(df.shape[0]),
@@ -322,6 +345,20 @@ def process_excel(file_path):
             'Valid': int((df['Reason'] == 'Valid').sum()),
             'N/A': int((df['Reason'] == 'N/A').sum())
         }
+        # After existing counts, add:
+
+        # Count header auto-valid rows (NEW)
+        from validators import contains_header_skip_keyword
+        counts['header_auto_valid'] = int(
+            df['wo_text_action.header'].apply(contains_header_skip_keyword).sum()
+        )
+
+        # Then in the display statistics section, add:
+        if counts['header_auto_valid'] > 0:
+            print(f"      (includes {counts['header_auto_valid']} header auto-valid rows)")
+
+        print("   ✓ Validation complete")
+
 
         # Count SEQ auto-valid rows
         from validators import is_seq_auto_valid

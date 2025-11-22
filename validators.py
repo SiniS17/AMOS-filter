@@ -1,6 +1,7 @@
 """
-validators.py - SPLIT VERSION with SEQ filtering
+validators.py - SPLIT VERSION with SEQ and HEADER filtering
 Updated to automatically mark SEQ 1.xx, 2.xx, 3.xx, 10.xx as Valid
+NEW: Check wo_text_action.header for skip keywords (CLOSE UP, JOB SET UP, etc.)
 
 Split "Missing reference/reference type" into two separate statuses:
 1. "Missing reference" - No reference documents found at all
@@ -15,7 +16,7 @@ Returns 5 validation states:
 """
 
 import re
-from config import REF_KEYWORDS, IAW_KEYWORDS, SKIP_PHRASES
+from config import REF_KEYWORDS, IAW_KEYWORDS, SKIP_PHRASES, HEADER_SKIP_KEYWORDS
 
 # Document ID pattern
 DOC_ID_PATTERN = re.compile(r'\b[A-Z0-9]{1,4}[0-9A-Z\-]{0,}\d+\b', re.IGNORECASE)
@@ -90,6 +91,31 @@ def is_seq_auto_valid(seq_value):
        seq_str.startswith('3.') or \
        seq_str.startswith('10.'):
         return True
+
+    return False
+
+
+def contains_header_skip_keyword(header_text):
+    """
+    NEW: Check if wo_text_action.header contains keywords that should skip validation.
+    Keywords: CLOSE UP, JOB SET UP, OPEN ACCESS, CLOSE ACCESS, GENERAL
+
+    Args:
+        header_text: The wo_text_action.header field value
+
+    Returns:
+        bool: True if header contains skip keywords
+    """
+    if not isinstance(header_text, str):
+        return False
+
+    # Normalize: uppercase and remove extra spaces
+    normalized = ' '.join(header_text.upper().split())
+
+    # Check against all header skip keywords
+    for keyword in HEADER_SKIP_KEYWORDS:
+        if keyword in normalized:
+            return True
 
     return False
 
@@ -214,7 +240,7 @@ def has_revision(text: str) -> bool:
     return False
 
 
-def check_ref_keywords(text, seq_value=None):
+def check_ref_keywords(text, seq_value=None, header_text=None):
     """
     SPLIT validation function - returns 5 states:
     - "Valid"
@@ -226,12 +252,16 @@ def check_ref_keywords(text, seq_value=None):
     NEW: If seq_value matches auto-valid patterns (1.xx, 2.xx, 3.xx, 10.xx),
          returns "Valid" immediately without further validation.
 
+    NEW: If header_text contains skip keywords (CLOSE UP, JOB SET UP, etc.),
+         returns "Valid" immediately without further validation.
+
     LOGIC FLOW:
     0. Check SEQ - if auto-valid pattern, return "Valid"
-    1. Preserve N/A/blank
-    2. Skip phrases → Valid
-    3. Special patterns (REFERENCED, NDT, SB, DATA MODULE TASK)
-    4. Check for primary reference (AMM/SRM/etc.)
+    1. Check HEADER - if contains skip keywords, return "Valid"
+    2. Preserve N/A/blank
+    3. Skip phrases → Valid
+    4. Special patterns (REFERENCED, NDT, SB, DATA MODULE TASK)
+    5. Check for primary reference (AMM/SRM/etc.)
        - If NO primary AND NO DMC/doc ID → "Missing reference"
        - If NO primary BUT HAS DMC/doc ID → "Missing reference type"
        - If HAS primary → check revision
@@ -241,7 +271,11 @@ def check_ref_keywords(text, seq_value=None):
     if seq_value is not None and is_seq_auto_valid(seq_value):
         return "Valid"
 
-    # ========== STEP 1: Preserve N/A / blank / None ==========
+    # ========== STEP 1: NEW - Check HEADER for skip keywords ==========
+    if header_text is not None and contains_header_skip_keyword(header_text):
+        return "Valid"
+
+    # ========== STEP 2: Preserve N/A / blank / None ==========
     if text is None:
         return "N/A"
     if isinstance(text, float):
@@ -251,33 +285,33 @@ def check_ref_keywords(text, seq_value=None):
     if stripped.upper() in ["N/A", "NA", "NONE", ""]:
         return stripped
 
-    # ========== STEP 2: Skip phrases ==========
+    # ========== STEP 3: Skip phrases ==========
     if contains_skip_phrase(stripped):
         return "Valid"
 
-    # ========== STEP 3: Fix typos ==========
+    # ========== STEP 4: Fix typos ==========
     cleaned = fix_common_typos(stripped)
 
-    # ========== STEP 4: Check for "REFERENCED" pattern ==========
+    # ========== STEP 5: Check for "REFERENCED" pattern ==========
     if has_referenced_pattern(cleaned):
         return "Valid"
 
-    # ========== STEP 5: Special document patterns ==========
+    # ========== STEP 6: Special document patterns ==========
 
-    # 5A: NDT REPORT with doc ID
+    # 6A: NDT REPORT with doc ID
     if has_ndt_report(cleaned):
         return "Valid"
 
-    # 5B: DATA MODULE TASK + SB reference
+    # 6B: DATA MODULE TASK + SB reference
     if has_data_module_task(cleaned) and has_sb_full_number(cleaned):
         return "Valid"
 
-    # 5C: SB with full number + linking word
+    # 6C: SB with full number + linking word
     iaw = has_iaw_keyword(cleaned)
     if has_sb_full_number(cleaned) and iaw:
         return "Valid"
 
-    # ========== STEP 6: Check for PRIMARY reference ==========
+    # ========== STEP 7: Check for PRIMARY reference ==========
     primary = has_primary_reference(cleaned)
     has_dmc = has_dmc_or_doc_id(cleaned)
 
@@ -298,14 +332,14 @@ def check_ref_keywords(text, seq_value=None):
             # - "RH CHECK VALVE INSPECTION C/O SATIS"
             return "Missing reference"
 
-    # ========== STEP 7: Has primary reference, check revision ==========
+    # ========== STEP 8: Has primary reference, check revision ==========
     if has_revision(cleaned):
         return "Valid"
 
-    # ========== STEP 8: Special case - doc ID + linking word ==========
+    # ========== STEP 9: Special case - doc ID + linking word ==========
     doc_id = DOC_ID_PATTERN.search(cleaned)
     if doc_id and iaw:
         return "Valid"
 
-    # ========== STEP 9: Has reference but missing revision ==========
+    # ========== STEP 10: Has reference but missing revision ==========
     return "Missing revision"

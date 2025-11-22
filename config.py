@@ -2,7 +2,7 @@
 Configuration file for the documentation validator.
 Contains all constants and configuration settings.
 
-UPDATED: Removed "No reference type" - merged with "Missing reference"
+UPDATED: Added HEADER_SKIP_KEYWORDS for wo_text_action.header filtering
 """
 
 # Reason dictionary for validation results (SIMPLIFIED - 3 states only)
@@ -31,6 +31,16 @@ SKIP_PHRASES = [
     "GET ACCESS", "GAIN ACCESS", "GAINED ACCESS", "ACCESS GAINED",
     "SPARE ORDERED", "ORDERED SPARE",
     "OBEY ALL", "FOLLOW ALL", "COMPLY WITH", "MEASURE AND RECORD", "SET TO INACTIVE"
+]
+
+# NEW: Keywords in wo_text_action.header that should mark row as Valid automatically
+# These are procedural/setup tasks that don't require documentation references
+HEADER_SKIP_KEYWORDS = [
+    "CLOSE UP", "CLOSEUP",
+    "JOB SET UP", "JOB SETUP", "JOBSETUP",
+    "OPEN ACCESS", "OPENACCESS",
+    "CLOSE ACCESS", "CLOSEACCESS",
+    "GENERAL", "JOB SET-UP", "JOB CLOSE-UP"
 ]
 
 # Invalid characters for folder names
