@@ -9,6 +9,10 @@ Statistics now track:
 - Missing reference type
 - Missing revision
 - N/A
+
+UPDATED: Logbook system
+- Instead of per-run .txt logs, we now append to a monthly Excel logbook:
+  DATA/log/logbook_YYYY_MM.xlsx
 """
 
 import os
@@ -29,8 +33,8 @@ def sanitize_folder_name(wp_value):
 
 def create_log_file(wp_value, output_file, counts, processing_time=None):
     """
-    Create a detailed log file with validation summary.
-    UPDATED: Now only tracks 3 error types (removed "No reference type")
+    (LEGACY) Create a detailed log file with validation summary as .txt.
+    Kept for backward compatibility but no longer used by default.
     """
     log_folder = os.path.join(DATA_FOLDER, wp_value, LOG_FOLDER)
     os.makedirs(log_folder, exist_ok=True)
@@ -96,7 +100,73 @@ def create_log_file(wp_value, output_file, counts, processing_time=None):
 
         log_file.write("\n" + "=" * 60 + "\n")
 
-    print(f"✓ Log file created: {log_filename}")
+    print(f"✓ Legacy txt log file created: {log_filename}")
+
+
+def append_to_logbook(wp_value, counts, processing_time=None):
+    """
+    Append one run to a monthly Excel logbook.
+
+    - File name format: logbook_YYYY_MM.xlsx
+    - Stored under: DATA/LOG_FOLDER (e.g. DATA/log/logbook_2025_11.xlsx)
+
+    Columns include (after cleanup):
+    - Order, DateTime, WP
+    - Orig rows, Out rows, Valid, N/A
+    - Missing reference, Missing reference type, Missing revision
+    - Seq auto-valid, Row mismatch flag
+    - Total errors, Error rate (%), Processing time (s)
+    """
+    now = datetime.now()
+    month_str = now.strftime("%Y_%m")  # e.g., 2025_11
+
+    logbook_folder = os.path.join(DATA_FOLDER, LOG_FOLDER)
+    os.makedirs(logbook_folder, exist_ok=True)
+
+    logbook_path = os.path.join(logbook_folder, f"logbook_{month_str}.xlsx")
+
+    # Compute totals
+    missing_ref = counts.get('Missing reference', 0)
+    missing_ref_type = counts.get('Missing reference type', 0)
+    missing_rev = counts.get('Missing revision', 0)
+    seq_auto_valid = counts.get('seq_auto_valid', 0)
+
+    total_errors = missing_ref + missing_ref_type + missing_rev
+    out_rows = counts.get('out_rows', 0)
+    error_rate = (total_errors / out_rows * 100) if out_rows > 0 else 0.0
+
+    row_mismatch = counts.get('orig_rows', 0) != counts.get('out_rows', 0)
+
+    # Row data AFTER removing Date, Time, Output file
+    row = {
+        "Order": None,
+        "DateTime": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "WP": wp_value,
+        "Orig rows": counts.get('orig_rows', 0),
+        "Out rows": out_rows,
+        "Valid": counts.get('Valid', 0),
+        "N/A": counts.get('N/A', 0),
+        "Missing reference": missing_ref,
+        "Missing reference type": missing_ref_type,
+        "Missing revision": missing_rev,
+        "SEQ auto-valid": seq_auto_valid,
+        "Row mismatch": row_mismatch,
+        "Total errors": total_errors,
+        "Error rate (%)": round(error_rate, 2),
+        "Processing time (s)": round(processing_time, 2) if processing_time is not None else None,
+    }
+
+    # Append or create
+    if os.path.exists(logbook_path):
+        existing_df = pd.read_excel(logbook_path)
+        row["Order"] = len(existing_df) + 1
+        df = pd.concat([existing_df, pd.DataFrame([row])], ignore_index=True)
+    else:
+        row["Order"] = 1
+        df = pd.DataFrame([row])
+
+    df.to_excel(logbook_path, index=False)
+    print(f"✓ Logbook updated: {logbook_path}")
 
 
 def validate_dataframe(df):
@@ -399,9 +469,12 @@ def process_excel(file_path):
 
         print(f"   ✓ File saved")
 
-        # ========== STEP 10: Create Log File ==========
+        # ========== STEP 10: Create Log Book Entry (Excel) ==========
         processing_time = (datetime.now() - start_time).total_seconds()
-        create_log_file(cleaned_folder_name, output_file, counts, processing_time)
+        append_to_logbook(cleaned_folder_name, counts, processing_time)
+
+        # If you still want txt logs as backup, uncomment this:
+        # create_log_file(cleaned_folder_name, output_file, counts, processing_time)
 
         # ========== FINAL SUMMARY ==========
         print("\n" + "="*60)
