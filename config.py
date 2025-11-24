@@ -18,7 +18,7 @@ REF_KEYWORDS = [
     "AMM", "SRM", "CMM", "EMM", "SOPM", "SWPM",
     "IPD", "FIM", "TSM", "IPC", "SB", "AD",
     "NTO", "MEL", "NEF", "MME", "LMM", "NTM", "DWG", "AIPC", "AMMS",
-    "DDG", "VSB", "BSI", "FIM"  # NEW: Additional document types
+    "DDG", "VSB", "BSI", "FIM", "FTD", "TIPF", "MNT", "EEL VNA", "EO EOD"  # NEW: Additional document types
 ]
 
 # Keywords for linking words (IAW, REF, PER)
@@ -30,7 +30,8 @@ IAW_KEYWORDS = ["IAW", "REF", "PER", "I.A.W"]
 SKIP_PHRASES = [
     "GET ACCESS", "GAIN ACCESS", "GAINED ACCESS", "ACCESS GAINED",
     "SPARE ORDERED", "ORDERED SPARE",
-    "OBEY ALL", "FOLLOW ALL", "COMPLY WITH", "MEASURE AND RECORD", "SET TO INACTIVE"
+    "OBEY ALL", "FOLLOW ALL", "COMPLY WITH", "MEASURE AND RECORD", "SET TO INACTIVE", "SEE FIGURE",
+    "REFER TO FIGURE"
 ]
 
 # NEW: Keywords in wo_text_action.header that should mark row as Valid automatically

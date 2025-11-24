@@ -36,6 +36,11 @@
 
 \- \[ ] Automation
 
+\- \[ ] 1 step may have a lot of action step (should be splitted but somehow not), try to make sure each work step have ref
+
+\- \[ ] updating keyword in N column: close up and job set up, OPEN ACCESS, CLOSE ACCESS, GENERAL
+
+\- \[ ] NDT MUST BE FOLLOW BY A NUMBER LIKE NTD102
 
 
 \## Known Issues 🐛
