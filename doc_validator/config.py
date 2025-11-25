@@ -52,4 +52,4 @@ DATA_FOLDER = 'DATA'
 LOG_FOLDER = 'log'
 
 # File paths
-LINK_FILE = '../link.txt'
+LINK_FILE = 'link.txt'

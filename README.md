@@ -1,235 +1,360 @@
-# Documentation Validator – Automated Excel Reference Validation Tool
+# AMOS-Filter / doc_validator
 
-This project is a Python-based tool for validating aircraft maintenance documentation references in Excel work packages.
+AMOS-Filter is a tool for validating documentation references inside maintenance Excel files.
+It is built as a modular Python package called `doc_validator` and can be used via:
 
-It will:
+- A **CLI** (command-line interface)
+- A **PyQt6 GUI**
+- Direct module imports in your own code
 
-- Download an Excel file from a specified Google Drive folder.
-- Parse and validate each maintenance text entry.
-- Classify rows into several validation states (Valid / Missing reference / Missing reference type / Missing revision / N/A).
-- Generate a cleaned Excel output file and a detailed validation log per work package.
+The tool connects to a configured Google Drive folder, downloads Excel work packages,
+runs a multi-state validation engine over each row, and writes filtered Excel outputs
+plus summary logbooks.
 
 ---
 
 ## 1. Features
 
-### 1.1 Google Drive Integration
-- Reads an API key and folder ID from a simple `link.txt` file.
-- Uses the Google Drive v3 API to list files in the configured folder and select a file to process.
-- Downloads the file into a structured `DATA/<WP>/` folder as `WP_<WP>_RAW.xlsx`.
-
-Core implementation: `drive_utils.py`, `main.py`.
-
-### 1.2 Robust Excel Processing
-- Reads Excel with **no row loss** using:
-
-  ```python
-  pd.read_excel(
-      file_path,
-      engine="openpyxl",
-      header=0,
-      sheet_name=0,
-      keep_default_na=False,
-      dtype=str,
-      na_filter=False,
-  )
-  ```
-
-- Normalises critical columns:
-  - Work text column: `wo_text_action.text` (renamed/created if necessary).
-  - Sequence column: `SEQ` (renamed/created if necessary).
-
-Core implementation: `excel_utils.py`.
-
-### 1.3 Validation Engine
-Validation logic is centralised in `validators.py` and driven by configuration in `config.py`:
-
-- Uses keyword sets for reference documents (AMM, SRM, CMM, EMM, SB, AD, MEL, NEF, etc.).
-- Uses linking keywords (IAW, REF, PER, etc.).
-- Uses skip-phrases where references are not required (e.g. “GET ACCESS”, “SPARE ORDERED”, “FOLLOW ALL”).
-
-The main function `check_ref_keywords(text, seq_value=None)` returns one of:
-
-- `Valid`
-- `Missing reference`          – no reference documents at all
-- `Missing reference type`     – has DMC/doc ID but no AMM/SRM/etc.
-- `Missing revision`           – has reference but missing REV/ISSUE/EXP date
-- `N/A`                        – blank or N/A-style entries
-
-Special patterns handled as Valid when correctly formed include:
-
-- REFERENCED AMM/SRM patterns.
-- NDT REPORT with ID.
-- Service Bulletin (SB) with full number.
-- DATA MODULE TASK + SB combinations.
-
-### 1.4 SEQ Auto-Validation
-
-Certain SEQ ranges are considered auto-valid regardless of text content:
-
-- Any SEQ value starting with `1.`
-- Any SEQ value starting with `2.`
-- Any SEQ value starting with `3.`
-- Any SEQ value starting with `10.`
-
-For these rows, `check_ref_keywords` will immediately return `Valid`.
-
-### 1.5 Output & Logging
-
-For each processed file, the tool produces:
-
-1. **New Excel file** in `DATA/<WP>/` named:
-   ```
-   WP_<WP>_<timestamp>.xlsx
-   ```
-
-   Additional behaviour:
-   - Adds a `Reason` column with the validation outcome for each row.
-   - Writes a set of hidden rows containing *all possible* Reason values so that Excel’s filter dropdown always contains every status (even if some don’t appear in the dataset).
-   - Applies an AutoFilter over the full data range.
-
-2. **Log file** in `DATA/<WP>/log/` with:
-   - Original vs output row counts.
-   - Number of rows per category (Valid, N/A, Missing reference, Missing reference type, Missing revision).
-   - Count of SEQ auto-valid rows.
-   - Error rate (%).
-   - Processing time.
-
-3. **Optional debug CSVs** (if row count mismatch detected):
-   - Original input CSV.
-   - Processed output CSV.
-   - Saved under a `DEBUG/` subfolder adjacent to the original file.
-
-### 1.6 Diagnostic Tool for Row Loss
-
-A separate script, `diagnose_row_loss.py`, is provided to help investigate any suspected row-loss problems when reading Excel files. It:
-
-- Tries multiple combinations of `read_excel` parameters.
-- Compares row counts across methods.
-- Uses `openpyxl` directly to count non-empty rows at the sheet level.
+- ✅ Connect to a fixed Google Drive folder (configured in `link.txt`)
+- ✅ List and download all Excel files from the folder
+- ✅ Process selected files via GUI (checkboxes) or all files via CLI
+- ✅ Multi-state validation of documentation references:
+  - `Valid`
+  - `Missing reference`
+  - `Missing reference type`
+  - `Missing revision`
+  - `N/A`
+- ✅ Special handling for:
+  - AMM / SRM / CMM / MEL / DDG / EMM references
+  - DMC & B787 document codes
+  - NDT REPORT patterns
+  - SB (Service Bulletin) references
+  - DATA MODULE TASK patterns
+- ✅ Safeguards against row loss with DEBUG CSV exports
+- ✅ Monthly Excel logbook with statistics per run
+- ✅ Tools for local batch processing and row-loss diagnosis
+- ✅ PyQt6 GUI with:
+  - File selection via checkboxes
+  - Live console-style logging
+  - Completion popup with output folder
 
 ---
 
 ## 2. Project Layout
 
-See `STRUCTURE.md` for a full breakdown, but at a high level:
+The refactored project is organized as:
 
 ```text
-.
-├── main.py
+doc_validator/
+├── __init__.py
 ├── config.py
-├── validators.py
-├── excel_utils.py
-├── drive_utils.py
-├── diagnose_row_loss.py
-├── test_validators.py
-├── test_real_world_data.py
-├── DATA/
-└── log/
+│
+├── core/
+│   ├── __init__.py
+│   ├── drive_io.py          # Google Drive API access and file download
+│   ├── excel_io.py          # Excel I/O, output paths, logbook, debug CSVs
+│   ├── excel_pipeline.py    # High-level Excel processing for one file
+│   └── pipeline.py          # Orchestrates Drive + Excel for batch runs
+│
+├── validation/
+│   ├── __init__.py
+│   ├── patterns.py          # Regex patterns and compiled objects
+│   ├── helpers.py           # Utility checks (typos, skip phrases, patterns)
+│   └── engine.py            # Main check_ref_keywords() decision logic
+│
+├── interface/
+│   ├── __init__.py
+│   ├── cli_main.py          # Command-line entry point
+│   └── gui_qt.py            # PyQt6 GUI (file selection + log console)
+│
+├── tools/
+│   ├── __init__.py
+│   ├── process_local_batch.py  # Process all Excel files in a local folder
+│   └── diagnose_row_loss.py    # Investigate row-loss issues in Excel I/O
+│
+└── tests/
+    ├── __init__.py
+    ├── test_validators.py      # Unit tests for validation engine
+    └── test_real_world_data.py # Tests using real-world maintenance strings
+```
+
+At the project root you typically also have:
+
+```text
+run_cli.py        # convenience runner for the CLI
+run_gui.py        # convenience runner for the GUI (optional)
+TODO.md           # refactor checklist
+STRUCTURE.md      # original structure notes
+link.txt          # Google Drive credentials (not committed)
+DATA/             # data root: raw WP folders, logs, debug CSVs
+log/              # optional legacy log folder
 ```
 
 ---
 
-## 3. Installation
+## 3. Requirements & Installation
 
-### 3.1 Python Environment
+### 3.1. Python version
+
+- Python **3.10+** (tested with 3.11)
+
+### 3.2. Required packages
+
+Install dependencies with `pip`:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate      # Linux/macOS
-# or
-.venv\Scripts\activate       # Windows
-
 pip install -r requirements.txt
 ```
 
-If you don’t have a `requirements.txt` yet, a minimal set is:
+Typical dependencies include:
+
+- `pandas`
+- `openpyxl`
+- `google-api-python-client`
+- `PyQt6`
+- `numpy`
+- `python-dateutil` (if used)
+- plus any other libraries you already configured
+
+---
+
+## 4. Configuration
+
+### 4.1. Credentials file (`link.txt`)
+
+The Google Drive access is configured via a simple text file, usually at the project root:
 
 ```text
-pandas
-openpyxl
-google-api-python-client
+GG_API_KEY=YOUR_GOOGLE_API_KEY
+GG_FOLDER_ID=YOUR_GOOGLE_DRIVE_FOLDER_ID
 ```
 
-### 3.2 Google Drive API
+- `GG_API_KEY` — API key with access to Google Drive
+- `GG_FOLDER_ID` — ID of the Google Drive folder containing Excel work packages
 
-1. Create / get an API key for Google Drive v3.
-2. Create a Google Drive folder and put the input Excel file in it.
-3. Create a `link.txt` in the project root with:
+This file is read by:
 
-   ```text
-   GG_API_KEY=your_api_key_here
-   GG_FOLDER_ID=your_folder_id_here
-   ```
+- `doc_validator.core.drive_io.read_credentials_file`
+- `doc_validator.core.pipeline.process_from_credentials_file`
+- `doc_validator.interface.gui_qt.MainWindow` (indirectly via `LINK_FILE` in `config.py`)
 
-The tool will read this file automatically at runtime.
+You can adjust the default path via `LINK_FILE` constant in `config.py`.
+
+### 4.2. Data folder (`DATA/`)
+
+The `DATA/` folder (path also defined in `config.py`) is used to store:
+
+- Downloaded raw Excel files (per work package)
+- Processed Excel outputs
+- DEBUG CSVs (input/output snapshots)
+- Monthly Excel logbooks
+
+Structure example:
+
+```text
+DATA/
+├── temp_gui/
+│   └── <raw files downloaded by GUI>
+├── <WP_001>/
+│   ├── WP_<WP_001>_<timestamp>.xlsx
+│   └── log/
+│       └── WP_<WP_001>_<timestamp>.txt   (optional legacy log)
+└── log/
+    └── logbook_YYYY_MM.xlsx              # monthly statistics
+```
 
 ---
 
-## 4. Usage
+## 5. Usage
 
-### 4.1 End-to-End Run
+### 5.1. CLI usage
 
-From the project root:
+If you created `run_cli.py` at the root:
 
 ```bash
-python main.py
+python run_cli.py
 ```
 
-The script will:
+This will:
 
-1. Read API key and folder ID from `link.txt`.
-2. Authenticate Google Drive.
-3. List and select the first file in the configured folder.
-4. Download it into `DATA/temp_download/` as `WP_temp_download_RAW.xlsx`.
-5. Process the Excel file and infer the real WP value from the `WP` column.
-6. Save the validated output under `DATA/<WP>/` and create a log file under `DATA/<WP>/log/`.
+1. Read `GG_API_KEY` and `GG_FOLDER_ID` from `LINK_FILE` in `config.py`
+2. Connect to Google Drive
+3. Download **all** Excel files in the configured folder
+4. Process each file with `process_excel`
+5. Print a summary of successes/failures
+6. Write outputs and logbook updates under `DATA/`
 
-### 4.2 Running Only the Validator Tests
+You can also run the CLI module directly:
 
 ```bash
-python test_validators.py
-python test_real_world_data.py
+python -m doc_validator.interface.cli_main
 ```
 
-- `test_validators.py` focuses on unit-level behaviours (typo correction, revision detection, skip phrases, etc.).
-- `test_real_world_data.py` runs multiple realistic strings taken from actual customer data to ensure the rules behave as expected.
-
-### 4.3 Row-Loss Diagnostic
-
-If you suspect rows are being lost at the Excel reading stage, run:
+Optionally, pass a specific credentials file:
 
 ```bash
-python diagnose_row_loss.py path/to/file.xlsx
+python -m doc_validator.interface.cli_main path/to/other_link.txt
 ```
 
-This will print a comparative summary of row counts under various reading modes and highlight which one preserves the maximum number of rows.
+---
+
+### 5.2. GUI usage (PyQt6)
+
+If you created `run_gui.py`:
+
+```bash
+python run_gui.py
+```
+
+or directly:
+
+```bash
+python -m doc_validator.interface.gui_qt
+```
+
+The GUI will:
+
+1. Read credentials from `LINK_FILE` (`link.txt` by default)
+2. Authenticate with Google Drive
+3. List **all Excel files** in the configured folder
+4. Show a table with:
+   - A checkbox for each file
+   - The file name
+5. Let the user:
+   - Select/deselect files
+   - Click **Run** to process selected files
+6. Display console-style log output in the bottom panel:
+   - Mirrors `print()` output from the backend
+7. When all processing is done:
+   - Show a popup:  
+     **"Data has been filtered"**  
+     with the path to the first successful output directory
+
+> Note: the user **cannot change the Drive folder** from the GUI.
+> Folder selection is controlled by credentials and configuration only.
 
 ---
 
-## 5. Configuration
+### 5.3. Local batch processing (without Drive)
 
-All configurable constants live in `config.py`, including:
+You can also process a folder of local Excel files without using Google Drive:
 
-- `REF_KEYWORDS` – the list of document types to be treated as “primary” references (AMM, SRM, CMM, etc.).
-- `IAW_KEYWORDS` – linking terms like `IAW`, `REF`, `PER`.
-- `SKIP_PHRASES` – phrases that should be auto-marked as Valid without reference checking.
-- `DATA_FOLDER` – root for data and outputs (default: `DATA`).
-- `LOG_FOLDER` – subfolder for logs (default: `log`).
-- `INVALID_CHARACTERS` – regex for sanitising folder/file names.
+```bash
+python -m doc_validator.tools.process_local_batch "path/to/excel/folder"
+```
 
-To adjust the rule-set for your organisation, you normally only need to edit `config.py` and, if necessary, tweak `validators.py`.
+This will:
 
----
-
-## 6. Limitations & Future Work
-
-- Only the first file in the Google Drive folder is processed; more complex file selection (e.g. by name/date) can be added.
-- Current validator is tailored to AMM/SRM/EMM-style documentation; additional document families can be plugged into the keyword config.
-- GUI / web front-end is not included yet; this version focuses purely on the backend batch validator.
+- Scan the folder for `*.xls` / `*.xlsx` files
+- Process each with `process_excel`
+- Print a summary of successful and failed files
 
 ---
 
-## 7. License
+## 6. Validation Logic
 
-Internal use only (VAECO / maintenance engineering tooling).
+The heart of the tool is `doc_validator.validation.engine.check_ref_keywords`.
+
+### 6.1. Output states
+
+Each row is classified as one of:
+
+- `"Valid"`
+- `"Missing reference"`
+- `"Missing reference type"`
+- `"Missing revision"`
+- `"N/A"`
+
+### 6.2. High-level rules (simplified)
+
+1. If SEQ matches auto-valid patterns (e.g. `1.xx`, `2.xx`, `3.xx`, `10.xx`)  
+   → `"Valid"` immediately.
+
+2. If header contains skip keywords (e.g. `CLOSE UP`, `JOB SET UP`, `OPEN ACCESS`, etc.)  
+   → `"Valid"`.
+
+3. If text is `None` → `"N/A"`.  
+   If text is `"N/A"`, `"NA"`, `"NONE"` or empty → preserved as-is.
+
+4. If text contains skip phrases (e.g. `GAIN ACCESS`, `SPARE ORDERED`)  
+   → `"Valid"`.
+
+5. Typos are normalized (e.g. `REFAMM52-11-01REV156` becomes `REF AMM 52-11-01 REV 156`).
+
+6. Special valid patterns:
+   - `REFERENCED AMM/SRM/...`
+   - `NDT REPORT <ID>`
+   - `DATA MODULE TASK <N> + SB <full-number>` (if configured as valid)
+
+7. If there is **no primary reference** (AMM/SRM/etc.):
+   - And **no DMC/doc ID** → `"Missing reference"`
+   - But **has DMC/doc ID** → `"Missing reference type"`
+
+8. If there is a primary reference but **no revision** (REV/ISSUE/EXP/DEADLINE/DATE)  
+   → `"Missing revision"`
+
+This is intentionally strict to highlight missing documentation or incomplete references
+so maintenance data can be cleaned and standardized.
+
+---
+
+## 7. Debugging & Diagnostics
+
+### 7.1. Row-loss diagnosis
+
+To investigate potential row-loss issues when reading/writing Excel files, use:
+
+```bash
+python -m doc_validator.tools.diagnose_row_loss path/to/file.xlsx
+```
+
+This tool will:
+
+- Read the file with strict settings
+- Inspect columns, types, empty rows
+- Help identify where rows might be disappearing
+
+### 7.2. Test suites
+
+To run unit tests on the validation engine:
+
+```bash
+python -m doc_validator.tests.test_validators
+```
+
+To run tests based on real-world maintenance samples:
+
+```bash
+python -m doc_validator.tests.test_real_world_data
+```
+
+---
+
+## 8. Development Notes
+
+- The original codebase was a flat script (`main.py`, `validators.py`, `excel_utils.py`, `drive_utils.py`).
+- It has been refactored into a **package** with clearly separated concerns:
+  - Validation rules
+  - Excel I/O
+  - Drive I/O
+  - Orchestration
+  - Interfaces (CLI + GUI)
+  - Tools and tests
+- All new code should prefer importing from:
+  - `doc_validator.validation.*`
+  - `doc_validator.core.*`
+  - `doc_validator.interface.*`
+
+If you add new validation rules, prefer:
+
+- Adding patterns to `validation/patterns.py`
+- Adding helper checks to `validation/helpers.py`
+- Updating decision flow in `validation/engine.py`
+- Extending test coverage in `doc_validator/tests/`
+
+---
+
+## 9. License
+
+This project is currently private / internal.
+Add license information here if you plan to distribute it.

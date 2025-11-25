@@ -1,7 +1,8 @@
 # doc_validator/interface/gui_qt.py
 
-from __future__ import annotations
 
+from __future__ import annotations
+from PyQt6.QtGui import QTextCursor
 import os
 import sys
 from dataclasses import dataclass
@@ -296,9 +297,16 @@ class MainWindow(QMainWindow):
         """
         Append text to log window and scroll to bottom.
         """
-        self.log_text.moveCursor(self.log_text.textCursor().End)
+        # Move cursor to end
+        cursor = self.log_text.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.log_text.setTextCursor(cursor)
+
+        # Insert text
         self.log_text.insertPlainText(text)
-        self.log_text.moveCursor(self.log_text.textCursor().End)
+
+        # Ensure view is scrolled to bottom
+        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
 
     def _load_drive_files(self):
         """
