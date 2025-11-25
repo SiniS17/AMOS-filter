@@ -8,7 +8,7 @@ import os
 import io
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from config import DATA_FOLDER
+from doc_validator.config import DATA_FOLDER
 
 
 def authenticate_drive_api(api_key):

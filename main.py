@@ -11,7 +11,7 @@ from drive_utils import (
     read_credentials_file
 )
 from excel_utils import process_excel
-from config import LINK_FILE
+from doc_validator.config import LINK_FILE
 
 
 def main():

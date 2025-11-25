@@ -16,7 +16,7 @@ Returns 5 validation states:
 """
 
 import re
-from config import REF_KEYWORDS, IAW_KEYWORDS, SKIP_PHRASES, HEADER_SKIP_KEYWORDS
+from doc_validator.config import REF_KEYWORDS, IAW_KEYWORDS, SKIP_PHRASES, HEADER_SKIP_KEYWORDS
 
 # Document ID pattern
 DOC_ID_PATTERN = re.compile(r'\b[A-Z0-9]{1,4}[0-9A-Z\-]{0,}\d+\b', re.IGNORECASE)

@@ -19,8 +19,8 @@ import os
 import re
 import pandas as pd
 from datetime import datetime
-from validators import check_ref_keywords
-from config import DATA_FOLDER, LOG_FOLDER, INVALID_CHARACTERS
+from doc_validator.validation.engine import check_ref_keywords
+from doc_validator.config import DATA_FOLDER, LOG_FOLDER, INVALID_CHARACTERS
 
 
 def sanitize_folder_name(wp_value):
