@@ -1,4 +1,46 @@
-"""
+from pathlib import Path
+import sys
+
+
+def get_base_dir() -> Path:
+    """
+    Return the base directory of the app.
+
+    - When running as a PyInstaller EXE (onedir or onefile):
+        base_dir = folder containing the executable.
+    - When running from source:
+        base_dir = project root (parent of `doc_validator`).
+    """
+    if getattr(sys, "frozen", False):
+        # Running as a PyInstaller bundle
+        return Path(sys.executable).resolve().parent
+
+    # Running from source: .../project_root/doc_validator/config.py
+    return Path(__file__).resolve().parent.parent
+
+
+BASE_DIR = get_base_dir()
+
+# --- LINK FILE ---
+
+# Primary location: bin/link.txt (inside dist folder when frozen)
+bin_link = BASE_DIR / "bin" / "link.txt"
+root_link = BASE_DIR / "link.txt"  # fallback for dev mode
+
+if bin_link.is_file():
+    LINK_FILE = str(bin_link)
+else:
+    LINK_FILE = str(root_link)
+
+# --- DATA / LOG FOLDERS ---
+
+DATA_FOLDER = str((BASE_DIR / "DATA").resolve())
+LOG_FOLDER = "log"  # subfolder name under each WP folder or DATA/log if you use it
+
+# other constants (REF_KEYWORDS, INVALID_CHARACTERS, etc.) stay the same
+
+
+""" 
 Configuration file for the documentation validator.
 Contains all constants and configuration settings.
 
@@ -52,4 +94,4 @@ DATA_FOLDER = 'DATA'
 LOG_FOLDER = 'log'
 
 # File paths
-LINK_FILE = 'link.txt'
+LINK_FILE = 'bin/link.txt'
