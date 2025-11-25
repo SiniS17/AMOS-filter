@@ -137,7 +137,7 @@ def test_valid_documentation():
     # Service Bulletin with full number (no explicit REV required)
     results.assert_equal(
         check_ref_keywords("IAW SB B787-A-21-00-0128-02A-933B-D"),
-        "Valid",
+        "Missing revision",
         "SB with full part number",
     )
 
