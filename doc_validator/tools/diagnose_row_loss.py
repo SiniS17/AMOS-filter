@@ -8,8 +8,6 @@ Usage:
 """
 
 import sys
-import pandas as pd
-import numpy as np
 
 
 def diagnose_file(file_path):
