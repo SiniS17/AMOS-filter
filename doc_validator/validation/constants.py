@@ -15,7 +15,7 @@ REASONS_DICT = {
 # Keywords for reference documentation (AMM, SRM, etc.)
 # These are the PRIMARY references that count as valid
 REF_KEYWORDS = [
-    "AMM", "SRM", "CMM", "EMM", "SOPM", "SWPM",
+    "AMM", "DMC", "SRM", "CMM", "EMM", "SOPM", "SWPM",
     "IPD", "FIM", "TSM", "IPC", "SB", "AD",
     "NTO", "MEL", "NEF", "MME", "LMM", "NTM", "DWG", "AIPC", "AMMS",
     "DDG", "VSB", "BSI", "FIM", "FTD", "TIPF", "MNT", "EEL VNA", "EO EOD"  # NEW: Additional document types

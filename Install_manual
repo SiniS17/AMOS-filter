@@ -1,0 +1,1 @@
+pyinstaller --windowed --name "AMOSFilter" --add-data "bin;bin" --distpath EXE run_gui.py
