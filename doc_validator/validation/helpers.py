@@ -1,14 +1,14 @@
 # doc_validator/validation/helpers.py
 
 import re
-from doc_validator.config import (
+
+from .constants import (
     REF_KEYWORDS,
     IAW_KEYWORDS,
     SKIP_PHRASES,
     HEADER_SKIP_KEYWORDS,
 )
 from .patterns import (
-    DOC_ID_PATTERN,
     DMC_PATTERN,
     B787_DOC_PATTERN,
     DATA_MODULE_TASK_TEXT,

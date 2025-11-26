@@ -1,3 +1,6 @@
 /DATA
 *.xlsx
 doc_validator/link.txt
+/EXE
+/build
+/DATA

@@ -1,7 +1,9 @@
 # doc_validator/validation/patterns.py
 
+
 import re
-from doc_validator.config import REF_KEYWORDS
+
+from .constants import REF_KEYWORDS
 
 # Document ID pattern
 DOC_ID_PATTERN = re.compile(r'\b[A-Z0-9]{1,4}[0-9A-Z\-]{0,}\d+\b', re.IGNORECASE)

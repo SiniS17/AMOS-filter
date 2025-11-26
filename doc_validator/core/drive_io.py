@@ -8,8 +8,8 @@ Google Drive utilities for downloading files.
 - Read API key and folder ID from a credentials file (link.txt)
 """
 
-import os
 import io
+import os
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -27,7 +27,15 @@ def authenticate_drive_api(api_key):
     Returns:
         drive_service: Authenticated Google Drive service
     """
-    drive_service = build("drive", "v3", developerKey=api_key)
+    # static_discovery=False forces the client to fetch the discovery
+    # document from Google's servers instead of using a local JSON file
+    # (which is missing in the PyInstaller bundle).
+    drive_service = build(
+        "drive",
+        "v3",
+        developerKey=api_key,
+        static_discovery=False,
+    )
     return drive_service
 
 
