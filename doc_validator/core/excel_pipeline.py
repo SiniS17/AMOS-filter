@@ -1,5 +1,3 @@
-# doc_validator/core/excel_pipeline.py
-
 from datetime import datetime
 
 import pandas as pd
@@ -111,6 +109,22 @@ def _prepare_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     df["wo_text_action.header"] = df["wo_text_action.header"].fillna("")
 
+    # DES
+    if "DES" not in df.columns:
+        des_candidates = [c for c in df.columns if str(c).upper() == "DES"]
+        if des_candidates:
+            df = df.rename(columns={des_candidates[0]: "DES"})
+            print(f"   ✓ Found DES column: '{des_candidates[0]}'")
+        else:
+            df["DES"] = None
+            print(
+                "   ⚠️ No DES column found, "
+                "DES-based reference logic will treat rows "
+                "as if no DES reference is present"
+            )
+
+    df["DES"] = df["DES"].fillna("")
+
     return df
 
 
@@ -164,29 +178,24 @@ def process_excel(file_path: str) -> str | None:
             lambda row: check_ref_keywords(
                 row["wo_text_action.text"],
                 row["SEQ"],
-                row["wo_text_action.header"],
+                row["wo_text_action.header"],  # header skip logic
+                row["DES"],  # DES decides Missing reference
             ),
             axis=1,
         )
+
         print("   ✓ Validation complete")
 
         # ========== STEP 5: Statistics ==========
-        counts = {
-            "orig_rows": orig_rows,
-            "out_rows": int(df.shape[0]),
-            "Missing reference": int((df["Reason"] == "Missing reference").sum()),
-            "Missing reference type": int(
-                (df["Reason"] == "Missing reference type").sum()
-            ),
-            "Missing revision": int((df["Reason"] == "Missing revision").sum()),
-            "Valid": int((df["Reason"] == "Valid").sum()),
-            "N/A": int((df["Reason"] == "N/A").sum()),
-        }
+        counts = {"orig_rows": orig_rows, "out_rows": int(df.shape[0]),
+                  "Missing reference": int((df["Reason"] == "Missing reference").sum()),
+                  "Missing revision": int((df["Reason"] == "Missing revision").sum()),
+                  "Valid": int((df["Reason"] == "Valid").sum()), "N/A": int((df["Reason"] == "N/A").sum()),
+                  "header_auto_valid": int(
+                      df["wo_text_action.header"].apply(contains_header_skip_keyword).sum()
+                  )}
 
         # Header auto-valid count
-        counts["header_auto_valid"] = int(
-            df["wo_text_action.header"].apply(contains_header_skip_keyword).sum()
-        )
         if counts["header_auto_valid"] > 0:
             print(
                 f"      (includes {counts['header_auto_valid']} "
@@ -213,7 +222,6 @@ def process_excel(file_path: str) -> str | None:
                 counts["Valid"],
                 counts["N/A"],
                 counts["Missing reference"],
-                counts["Missing reference type"],
                 counts["Missing revision"],
             ]
         )
@@ -239,16 +247,11 @@ def process_excel(file_path: str) -> str | None:
 
         print(f"   • N/A: {counts['N/A']}")
         print(f"   ✗ Missing reference: {counts['Missing reference']}")
-        print(
-            f"   ✗ Missing reference type: "
-            f"{counts['Missing reference type']}"
-        )
         print(f"   ✗ Missing revision: {counts['Missing revision']}")
 
         total_errors = (
-            counts["Missing reference"]
-            + counts["Missing reference type"]
-            + counts["Missing revision"]
+                counts["Missing reference"]
+                + counts["Missing revision"]
         )
         print(f"\n   Total errors: {total_errors}")
         if counts["out_rows"] > 0:
@@ -268,8 +271,6 @@ def process_excel(file_path: str) -> str | None:
         # ========== STEP 8: Logbook ==========
         processing_time = (datetime.now() - start_time).total_seconds()
         append_to_logbook(cleaned_folder_name, counts, processing_time)
-
-        # create_log_file(cleaned_folder_name, output_file, counts, processing_time)
 
         # Summary
         print("\n" + "=" * 60)

@@ -38,7 +38,7 @@ SKIP_PHRASES = [
 # These are procedural/setup tasks that don't require documentation references
 HEADER_SKIP_KEYWORDS = [
     "CLOSE UP", "CLOSEUP",
-    "JOB SET UP", "JOB SETUP", "JOBSETUP",
+    "JOB SET UP", "JOB SETUP", "JOBSETUP", "CLOSE-UP",
     "OPEN ACCESS", "OPENACCESS",
     "CLOSE ACCESS", "CLOSEACCESS",
     "GENERAL", "JOB SET-UP", "JOB CLOSE-UP"
