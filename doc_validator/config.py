@@ -1,40 +1,33 @@
 from pathlib import Path
+import sys
 
 # ------------------------------------------------------------
-# Base directory (project root during development, and
-# dist/AMOSFilter/ when built with PyInstaller onedir)
+# Determine base directory:
+# - In development: project root
+# - In onedir PyInstaller build: folder containing AMOSFilter.exe
 # ------------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent.parent
+if getattr(sys, 'frozen', False):
+    # EXE mode
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    # Source mode
+    BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ------------------------------------------------------------
-# Credentials file
-# ------------------------------------------------------------
-# You already placed link.txt inside a bin/ folder at project root.
-# With PyInstaller onedir + --add-data "bin;bin", the same folder
-# will appear beside AMOSFilter.exe.
-#
-# Final structure after building:
-#   dist/AMOSFilter/
-#       AMOSFilter.exe
-#       bin/
-#           link.txt
-#
-# So this path works both in development and in the built app.
+# Credentials file (always under bin/)
 # ------------------------------------------------------------
 LINK_FILE = str(BASE_DIR / "bin" / "link.txt")
 
 # ------------------------------------------------------------
-# Data folder
-# ------------------------------------------------------------
-# The program will create a DATA/ folder next to the .exe
-# or next to your project root in dev mode.
+# Data folder (always created next to exe)
 # ------------------------------------------------------------
 DATA_FOLDER = str(BASE_DIR / "DATA")
+Path(DATA_FOLDER).mkdir(exist_ok=True)
 
-# Subfolder name for logs inside each WP folder
+# Subfolder for log inside each WP folder
 LOG_FOLDER = "log"
 
 # ------------------------------------------------------------
-# Other constants (just examples)
+# Other constants
 # ------------------------------------------------------------
-INVALID_CHARACTERS = r'[\\/*?:"<>|]'  # for cleaning folder names
+INVALID_CHARACTERS = r'[\\/*?:"<>|]'
