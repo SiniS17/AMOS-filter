@@ -112,6 +112,39 @@ class MainWindow(QMainWindow):
             QTableWidget.EditTrigger.NoEditTriggers
         )
 
+        # Enhanced style with checkmark
+        self.table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #3b3b3b;
+            }
+            QTableWidget::item {
+                padding: 5px;
+            }
+            QTableWidget::indicator {
+                width: 20px;
+                height: 20px;
+                border: 2px solid #666;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+            }
+            QTableWidget::indicator:unchecked {
+                background-color: #2b2b2b;
+                border: 2px solid #666;
+            }
+            QTableWidget::indicator:unchecked:hover {
+                background-color: #3b3b3b;
+                border: 2px solid #999;
+            }
+            QTableWidget::indicator:checked {
+                background-color: #2196F3;
+                border: 2px solid #2196F3;
+            }
+            QTableWidget::indicator:checked:hover {
+                background-color: #42A5F5;
+                border: 2px solid #42A5F5;
+            }
+        """)
+
         main_layout.addWidget(self.table)
 
         # Buttons under table
@@ -275,12 +308,15 @@ class MainWindow(QMainWindow):
         for row_idx, file_info in enumerate(self.drive_files):
             self.table.insertRow(row_idx)
 
+            # Checkbox item - centered and styled for dark mode
             chk_item = QTableWidgetItem()
             chk_item.setFlags(
                 Qt.ItemFlag.ItemIsUserCheckable
                 | Qt.ItemFlag.ItemIsEnabled
             )
             chk_item.setCheckState(Qt.CheckState.Unchecked)
+            chk_item.setText("")  # Remove any text
+            chk_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)  # Center the checkbox
             self.table.setItem(row_idx, 0, chk_item)
 
             name_item = QTableWidgetItem(file_info.name)
