@@ -251,6 +251,7 @@ class MainWindow(QMainWindow):
 
     def _load_drive_files(self) -> None:
         """Read credentials and list all Excel files in the configured folder."""
+        self.log_text.clear()
         self._append_log(f"🔄 Reading credentials from: {LINK_FILE}\n")
         api_key, folder_id = read_credentials_file(LINK_FILE)
 
