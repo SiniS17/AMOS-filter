@@ -4,10 +4,11 @@ High-level processing pipeline that connects:
 - Google Drive I/O
 - Excel validation pipeline
 
-This module is the "brain" that both CLI and future GUI code will call.
+This module is the "brain" that both CLI and GUI code will call.
 """
 
 from typing import Callable, List, Dict, Any, Optional
+from datetime import date
 
 from doc_validator.core.drive_io import (
     authenticate_drive_api,
@@ -29,18 +30,22 @@ def process_work_package(
     api_key: str,
     folder_id: str,
     *,
+    filter_start_date: Optional[date] = None,
+    filter_end_date: Optional[date] = None,
     logger: Optional[Logger] = None,
 ) -> List[Dict[str, Any]]:
     """
-    High-level pipeline:
+    High-level pipeline with optional date filtering.
     - Authenticates to Google Drive
     - Downloads **all Excel files** in the given folder
-    - Runs the Excel validation pipeline on each
+    - Runs the Excel validation pipeline on each (with optional date filter)
     - Returns a list of results (one per file)
 
     Args:
         api_key: Google Drive API key (GG_API_KEY)
         folder_id: Google Drive folder ID (GG_FOLDER_ID)
+        filter_start_date: Optional start date for filtering
+        filter_end_date: Optional end date for filtering
         logger: Optional logging function (e.g., for GUI). Defaults to print.
 
     Returns:
@@ -92,7 +97,12 @@ def process_work_package(
         log(f"[{idx}/{len(downloaded_files)}] Processing file: {src_name}")
         log(f"    Local path: {local_path}")
 
-        output_file = process_excel(local_path)
+        # Process with optional date filter
+        output_file = process_excel(
+            local_path,
+            filter_start_date=filter_start_date,
+            filter_end_date=filter_end_date,
+        )
 
         if output_file:
             log(f"    ✓ Output file created: {output_file}")
@@ -116,6 +126,8 @@ def process_work_package(
 def process_from_credentials_file(
     credentials_path: str = "link.txt",
     *,
+    filter_start_date: Optional[date] = None,
+    filter_end_date: Optional[date] = None,
     logger: Optional[Logger] = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -124,6 +136,8 @@ def process_from_credentials_file(
 
     Args:
         credentials_path: Path to credentials file (default: 'link.txt')
+        filter_start_date: Optional start date for filtering
+        filter_end_date: Optional end date for filtering
         logger: Optional logger (for CLI/GUI)
 
     Returns:
@@ -140,4 +154,10 @@ def process_from_credentials_file(
             f"GG_API_KEY or GG_FOLDER_ID missing."
         )
 
-    return process_work_package(api_key, folder_id, logger=logger)
+    return process_work_package(
+        api_key,
+        folder_id,
+        filter_start_date=filter_start_date,
+        filter_end_date=filter_end_date,
+        logger=logger,
+    )

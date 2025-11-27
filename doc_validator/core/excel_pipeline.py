@@ -1,4 +1,6 @@
-from datetime import datetime
+# doc_validator/core/excel_pipeline.py
+
+from datetime import datetime, date
 
 import pandas as pd
 
@@ -62,6 +64,175 @@ def extract_wp_value(df: pd.DataFrame) -> str:
         return "No_wp_found"
 
     return wp_value
+
+
+def apply_date_filter(
+        df: pd.DataFrame,
+        filter_start_date: date | None = None,
+        filter_end_date: date | None = None,
+) -> pd.DataFrame:
+    """
+    Apply date filtering to DataFrame based on action_date column.
+
+    Args:
+        df: Input DataFrame
+        filter_start_date: Optional start date (inclusive)
+        filter_end_date: Optional end date (inclusive)
+
+    Returns:
+        Filtered DataFrame
+    """
+    if df.empty:
+        return df
+
+    # Find date columns (case-insensitive)
+    action_date_col = None
+    start_date_col = None
+    end_date_col = None
+
+    for col in df.columns:
+        col_upper = str(col).upper()
+        if col_upper == "ACTION_DATE":
+            action_date_col = col
+        elif col_upper == "START_DATE":
+            start_date_col = col
+        elif col_upper == "END_DATE":
+            end_date_col = col
+
+    if not action_date_col:
+        print("   ⚠️ No action_date column found, skipping date filter")
+        return df
+
+    original_rows = len(df)
+
+    # Convert action_date to datetime with hard-coded format YYYY-MM-DD
+    df[action_date_col] = pd.to_datetime(
+        df[action_date_col],
+        format='%Y-%m-%d',
+        errors='coerce'
+    )
+
+    # Show action_date range before filtering
+    valid_dates = df[action_date_col].dropna()
+    if not valid_dates.empty:
+        print(f"   📊 ACTION_DATE range (before filter):")
+        print(f"      Min: {valid_dates.min().date()}")
+        print(f"      Max: {valid_dates.max().date()}")
+
+    # Remove rows with invalid dates
+    invalid_dates = df[action_date_col].isna().sum()
+    if invalid_dates > 0:
+        print(f"   ⚠️ Found {invalid_dates} rows with invalid date format - removing them")
+        df = df[df[action_date_col].notna()]
+
+    if df.empty:
+        print("   ⚠️ All rows have invalid dates")
+        return df
+
+    # Get file's date range from start_date/end_date columns (FIRST ROW ONLY)
+    file_start_date = None
+    file_end_date = None
+
+    if start_date_col:
+        raw_start = df[start_date_col].iloc[0]
+        start_ts = pd.to_datetime(
+            raw_start,
+            format='%Y-%m-%d',
+            errors='coerce',
+        )
+        if not pd.isna(start_ts):
+            file_start_date = start_ts
+
+    if end_date_col:
+        raw_end = df[end_date_col].iloc[0]
+        end_ts = pd.to_datetime(
+            raw_end,
+            format='%Y-%m-%d',
+            errors='coerce',
+        )
+        if not pd.isna(end_ts):
+            file_end_date = end_ts
+
+    # Show file's date range
+    print(f"\n   📅 FILE DATE RANGE (from columns):")
+    if file_start_date and not pd.isna(file_start_date):
+        print(f"      start_date: {file_start_date.date()}")
+    else:
+        print(f"      start_date: NOT FOUND")
+
+    if file_end_date and not pd.isna(file_end_date):
+        print(f"      end_date: {file_end_date.date()}")
+    else:
+        print(f"      end_date: NOT FOUND")
+
+    # PART 1: Auto-filter by file's date range
+    print(f"\n   🔍 PART 1: Auto-filtering by file's date range...")
+
+    if file_start_date and not pd.isna(file_start_date):
+        before = len(df)
+        df = df[df[action_date_col] >= file_start_date]
+        removed = before - len(df)
+        if removed > 0:
+            print(f"      ✓ Removed {removed} rows before {file_start_date.date()}")
+        else:
+            print(f"      ℹ️ No rows removed (all >= {file_start_date.date()})")
+
+    if file_end_date and not pd.isna(file_end_date):
+        before = len(df)
+        df = df[df[action_date_col] <= file_end_date]
+        removed = before - len(df)
+        if removed > 0:
+            print(f"      ✓ Removed {removed} rows after {file_end_date.date()}")
+        else:
+            print(f"      ℹ️ No rows removed (all <= {file_end_date.date()})")
+
+    # PART 2: User-specified filter
+    if filter_start_date or filter_end_date:
+        print(f"\n   👤 USER-SPECIFIED DATE FILTER:")
+        if filter_start_date:
+            print(f"      From: {filter_start_date}")
+        if filter_end_date:
+            print(f"      To: {filter_end_date}")
+
+        print(f"\n   🔍 PART 2: Applying user filter...")
+
+        if filter_start_date:
+            before = len(df)
+            df = df[df[action_date_col] >= pd.Timestamp(filter_start_date)]
+            removed = before - len(df)
+            if removed > 0:
+                print(f"      ✓ Removed {removed} rows before {filter_start_date}")
+            else:
+                print(f"      ℹ️ No rows removed by start date filter")
+
+        if filter_end_date:
+            before = len(df)
+            df = df[df[action_date_col] <= pd.Timestamp(filter_end_date)]
+            removed = before - len(df)
+            if removed > 0:
+                print(f"      ✓ Removed {removed} rows after {filter_end_date}")
+            else:
+                print(f"      ℹ️ No rows removed by end date filter")
+
+    # Show final action_date range
+    valid_dates_after = df[action_date_col].dropna()
+    if not valid_dates_after.empty:
+        print(f"\n   📊 ACTION_DATE range (after filter):")
+        print(f"      Min: {valid_dates_after.min().date()}")
+        print(f"      Max: {valid_dates_after.max().date()}")
+
+    filtered_rows = len(df)
+    total_removed = original_rows - filtered_rows
+
+    if total_removed > 0:
+        print(f"\n   ✅ Date filter complete: {filtered_rows} rows remain ({total_removed} removed)")
+    else:
+        print(f"\n   ✅ No rows filtered (all within range)")
+
+    # Convert back to string format
+    df[action_date_col] = df[action_date_col].dt.strftime('%Y-%m-%d')
+
+    return df
 
 
 def _prepare_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -128,11 +299,21 @@ def _prepare_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def process_excel(file_path: str) -> str | None:
+def process_excel(
+        file_path: str,
+        filter_start_date: date | None = None,
+        filter_end_date: date | None = None,
+) -> str | None:
     """
-    Process Excel file with multi-state validation.
+    Process Excel file with multi-state validation and optional date filtering.
 
-    Returns output Excel file path or None on error.
+    Args:
+        file_path: Path to Excel file
+        filter_start_date: Optional start date for filtering
+        filter_end_date: Optional end date for filtering
+
+    Returns:
+        Output Excel file path or None on error.
     """
     print("\n" + "=" * 60)
     print("PROCESSING EXCEL FILE")
@@ -152,7 +333,25 @@ def process_excel(file_path: str) -> str | None:
         if not empty_rows.empty:
             print(f"   ⚠️ Found {len(empty_rows)} completely empty rows")
 
-        # ========== STEP 2: Validate DataFrame ==========
+        # ========== STEP 2: Apply Date Filter (always) ==========
+        step_num = 2
+        print(f"\n{step_num}. Applying date filter "
+              f"(file's start/end + optional user range)...")
+
+        df = apply_date_filter(
+            df,
+            filter_start_date=filter_start_date,
+            filter_end_date=filter_end_date,
+        )
+
+        if df.empty:
+            print("   ✗ No data remains after date filtering")
+            return None
+
+        print(f"   ✓ {len(df)} rows after date filtering")
+        step_num += 1
+
+        # ========== STEP 3: Validate DataFrame ==========
         is_valid, error_msg = validate_dataframe(df)
         if not is_valid:
             print(f"   ✗ Validation error: {error_msg}")
@@ -160,12 +359,13 @@ def process_excel(file_path: str) -> str | None:
 
         orig_rows = df.shape[0]
 
-        # ========== STEP 3: Prepare columns ==========
-        print("\n2. Preparing data for validation...")
+        # ========== STEP 4: Prepare columns ==========
+        print(f"\n{step_num}. Preparing data for validation...")
         df = _prepare_columns(df)
+        step_num += 1
 
-        # ========== STEP 4: Apply Validation ==========
-        print("\n3. Validating documentation references...")
+        # ========== STEP 5: Apply Validation ==========
+        print(f"\n{step_num}. Validating documentation references...")
         print(
             "   ℹ️ SEQ 1.xx, 2.xx, 3.xx, 10.xx will be marked as Valid automatically"
         )
@@ -178,22 +378,27 @@ def process_excel(file_path: str) -> str | None:
             lambda row: check_ref_keywords(
                 row["wo_text_action.text"],
                 row["SEQ"],
-                row["wo_text_action.header"],  # header skip logic
-                row["DES"],  # DES decides Missing reference
+                row["wo_text_action.header"],
+                row["DES"],
             ),
             axis=1,
         )
 
         print("   ✓ Validation complete")
+        step_num += 1
 
-        # ========== STEP 5: Statistics ==========
-        counts = {"orig_rows": orig_rows, "out_rows": int(df.shape[0]),
-                  "Missing reference": int((df["Reason"] == "Missing reference").sum()),
-                  "Missing revision": int((df["Reason"] == "Missing revision").sum()),
-                  "Valid": int((df["Reason"] == "Valid").sum()), "N/A": int((df["Reason"] == "N/A").sum()),
-                  "header_auto_valid": int(
-                      df["wo_text_action.header"].apply(contains_header_skip_keyword).sum()
-                  )}
+        # ========== STEP 6: Statistics ==========
+        counts = {
+            "orig_rows": orig_rows,
+            "out_rows": int(df.shape[0]),
+            "Missing reference": int((df["Reason"] == "Missing reference").sum()),
+            "Missing revision": int((df["Reason"] == "Missing revision").sum()),
+            "Valid": int((df["Reason"] == "Valid").sum()),
+            "N/A": int((df["Reason"] == "N/A").sum()),
+            "header_auto_valid": int(
+                df["wo_text_action.header"].apply(contains_header_skip_keyword).sum()
+            )
+        }
 
         # Header auto-valid count
         if counts["header_auto_valid"] > 0:
@@ -232,7 +437,7 @@ def process_excel(file_path: str) -> str | None:
             print("      This suggests an uncategorized reason exists!")
 
         # Display stats
-        print("\n4. Validation Statistics:")
+        print(f"\n{step_num}. Validation Statistics:")
         print(f"   ✓ Valid: {counts['Valid']}")
         if counts["seq_auto_valid"] > 0:
             print(
@@ -258,17 +463,20 @@ def process_excel(file_path: str) -> str | None:
             error_rate = (total_errors / counts["out_rows"]) * 100
             print(f"   Error rate: {error_rate:.1f}%")
 
-        # ========== STEP 6: Prepare Output ==========
-        print("\n5. Preparing output file...")
+        step_num += 1
+
+        # ========== STEP 7: Prepare Output ==========
+        print(f"\n{step_num}. Preparing output file...")
         wp_value = extract_wp_value(df)
         cleaned_folder_name = sanitize_folder_name(wp_value).replace(" ", "_")
         cleaned_folder_name, output_file = build_output_path(wp_value)
+        step_num += 1
 
-        # ========== STEP 7: Write Excel ==========
+        # ========== STEP 8: Write Excel ==========
         print(f"   Writing to: {output_file}")
         write_output_excel(df, output_file)
 
-        # ========== STEP 8: Logbook ==========
+        # ========== STEP 9: Logbook ==========
         processing_time = (datetime.now() - start_time).total_seconds()
         append_to_logbook(cleaned_folder_name, counts, processing_time)
 
@@ -282,9 +490,8 @@ def process_excel(file_path: str) -> str | None:
 
         return output_file
 
-    except Exception as e:  # pragma: no cover - debugging path
+    except Exception as e:
         print(f"\n✗ ERROR: {str(e)}")
         import traceback
-
         traceback.print_exc()
         return None

@@ -219,48 +219,20 @@ def build_output_path(wp_value: str) -> tuple[str, str]:
 
 def write_output_excel(df: pd.DataFrame, output_file: str) -> None:
     """
-    Write the processed DataFrame to Excel and ensure all Reason values appear in
-    the filter dropdown by adding hidden rows for each possible status.
+    Write the processed DataFrame to Excel.
+
+    - No extra rows are added.
+    - Auto-filter is applied over the actual data range only.
     """
     with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, header=True)
+
         workbook = writer.book
         sheet = workbook.active
 
-        possible_reasons = [
-            "Valid",
-            "Missing reference",
-            "Missing reference type",
-            "Missing revision",
-            "N/A",
-        ]
-
-        # Find the Reason column index (1-based for Excel)
-        reason_col_idx = None
-        for idx, col in enumerate(df.columns, start=1):
-            if col == "Reason":
-                reason_col_idx = idx
-                break
-
-        if reason_col_idx:
-            last_data_row = sheet.max_row
-
-            for i, reason in enumerate(possible_reasons, start=1):
-                hidden_row = last_data_row + i
-                sheet.cell(row=hidden_row, column=reason_col_idx, value=reason)
-                sheet.row_dimensions[hidden_row].hidden = True
-
-            print(
-                f"   ✓ Added {len(possible_reasons)} hidden reference rows "
-                "for complete filter dropdown"
-            )
-
-            last_col_letter = sheet.cell(row=1, column=sheet.max_column).column_letter
-            sheet.auto_filter.ref = f"A1:{last_col_letter}{sheet.max_row}"
-        else:
-            sheet.auto_filter.ref = sheet.dimensions
-            print("   ⚠️ Reason column not found, using standard filter")
-
-        workbook.save(output_file)
+        # Apply auto filter to the data range
+        last_row = sheet.max_row
+        last_col_letter = sheet.cell(row=1, column=sheet.max_column).column_letter
+        sheet.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
 
     print(f"   ✓ File saved: {os.path.basename(output_file)}")

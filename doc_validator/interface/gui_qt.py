@@ -1,5 +1,5 @@
 # doc_validator/interface/gui_qt.py
-# PHASE 1 ENHANCED: Progress bar, Refresh, Open Folder, Collapsible Console
+# Date filtering now handled in core pipeline - GUI just passes parameters
 
 from __future__ import annotations
 from PyQt6.QtGui import QTextCursor
@@ -25,7 +25,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QHeaderView,
     QProgressDialog,
-    QSplitter,
     QDateEdit,
     QCheckBox,
     QGroupBox,
@@ -39,7 +38,7 @@ from doc_validator.core.drive_io import (
     read_credentials_file,
 )
 from doc_validator.core.excel_pipeline import process_excel
-from datetime import datetime, date
+from datetime import date
 
 
 # ---------------------------------------------------------------------
@@ -111,7 +110,7 @@ class ProcessingWorker(QThread):
         self.filter_end_date = filter_end_date
         self._cancelled = False
         self._line_count = 0
-        self._estimated_lines_per_file = 50  # Rough estimate for progress calculation
+        self._estimated_lines_per_file = 50
 
     def cancel(self):
         """Request cancellation of processing."""
@@ -140,8 +139,8 @@ class ProcessingWorker(QThread):
         Run in background thread:
         - authenticate
         - download each selected file
-        - process it with process_excel
-        - emit log messages with progress tracking based on console output
+        - process it with process_excel (date filter handled in core!)
+        - emit log messages with progress tracking
         """
         results: List[Dict[str, Any]] = []
 
@@ -213,25 +212,13 @@ class ProcessingWorker(QThread):
                     f"Local file path: {local_path}\n"
                 )
 
-                # Apply date filtering if dates are specified
-                if self.filter_start_date or self.filter_end_date:
-                    local_path = self._apply_date_filter(local_path)
-                    if not local_path:
-                        self._emit_log_and_count(
-                            f"⚠️ File skipped: No data within date range\n"
-                        )
-                        results.append(
-                            {
-                                "source_name": file_info.name,
-                                "source_id": file_info.file_id,
-                                "local_path": None,
-                                "output_file": None,
-                            }
-                        )
-                        continue
-
-                # Run the Excel processing pipeline
-                output_file = process_excel(local_path)
+                # Run the Excel processing pipeline with date filter
+                # (date filtering is now handled inside process_excel!)
+                output_file = process_excel(
+                    local_path,
+                    filter_start_date=self.filter_start_date,
+                    filter_end_date=self.filter_end_date,
+                )
 
                 if output_file:
                     self._emit_log_and_count(
@@ -268,125 +255,6 @@ class ProcessingWorker(QThread):
             sys.stdout = original_stdout
             # Emit results back to GUI thread
             self.finished_with_results.emit(results)
-
-    def _apply_date_filter(self, file_path: str) -> Optional[str]:
-        """
-        Apply date filtering to the Excel file.
-        Returns filtered file path or None if no data remains.
-        """
-        import pandas as pd
-        from doc_validator.core.excel_io import read_input_excel
-
-        try:
-            self._emit_log_and_count("   Applying date filter...\n")
-
-            # Read the Excel file
-            df = read_input_excel(file_path)
-            original_rows = len(df)
-
-            # Find date columns (case-insensitive)
-            start_date_col = None
-            end_date_col = None
-            action_date_col = None
-
-            for col in df.columns:
-                col_upper = str(col).upper()
-                if col_upper == "START_DATE":
-                    start_date_col = col
-                elif col_upper == "END_DATE":
-                    end_date_col = col
-                elif col_upper == "ACTION_DATE":
-                    action_date_col = col
-
-            if not action_date_col:
-                self._emit_log_and_count("   ⚠️ No action_date column found, skipping date filter\n")
-                return file_path
-
-            # Get file's date range (first non-null values)
-            file_start_date = None
-            file_end_date = None
-
-            if start_date_col:
-                file_start_date = pd.to_datetime(
-                    df[start_date_col].dropna().iloc[0] if not df[start_date_col].dropna().empty else None,
-                    errors='coerce')
-
-            if end_date_col:
-                file_end_date = pd.to_datetime(
-                    df[end_date_col].dropna().iloc[0] if not df[end_date_col].dropna().empty else None, errors='coerce')
-
-            # Convert action_date column to datetime
-            df[action_date_col] = pd.to_datetime(df[action_date_col], errors='coerce')
-
-            # PART 1: Automatic pre-filter (remove rows outside file's date range)
-            if file_start_date and not pd.isna(file_start_date):
-                before_filter = len(df)
-                df = df[df[action_date_col] >= file_start_date]
-                removed = before_filter - len(df)
-                if removed > 0:
-                    self._emit_log_and_count(
-                        f"   ✓ Removed {removed} rows before start_date ({file_start_date.date()})\n")
-
-            if file_end_date and not pd.isna(file_end_date):
-                before_filter = len(df)
-                df = df[df[action_date_col] <= file_end_date]
-                removed = before_filter - len(df)
-                if removed > 0:
-                    self._emit_log_and_count(f"   ✓ Removed {removed} rows after end_date ({file_end_date.date()})\n")
-
-            # PART 2: User-specified date filter
-            user_start = self.filter_start_date
-            user_end = self.filter_end_date
-
-            # Validate user dates against file dates
-            if user_start and file_start_date and not pd.isna(file_start_date):
-                if user_start < file_start_date.date():
-                    user_start = file_start_date.date()
-                    self._emit_log_and_count(f"   ℹ️ User start date adjusted to file start_date: {user_start}\n")
-
-            if user_end and file_end_date and not pd.isna(file_end_date):
-                if user_end > file_end_date.date():
-                    user_end = file_end_date.date()
-                    self._emit_log_and_count(f"   ℹ️ User end date adjusted to file end_date: {user_end}\n")
-
-            # Apply user filter
-            if user_start:
-                before_filter = len(df)
-                df = df[df[action_date_col] >= pd.Timestamp(user_start)]
-                removed = before_filter - len(df)
-                if removed > 0:
-                    self._emit_log_and_count(f"   ✓ User filter: Removed {removed} rows before {user_start}\n")
-
-            if user_end:
-                before_filter = len(df)
-                df = df[df[action_date_col] <= pd.Timestamp(user_end)]
-                removed = before_filter - len(df)
-                if removed > 0:
-                    self._emit_log_and_count(f"   ✓ User filter: Removed {removed} rows after {user_end}\n")
-
-            filtered_rows = len(df)
-            total_removed = original_rows - filtered_rows
-
-            if filtered_rows == 0:
-                self._emit_log_and_count(f"   ⚠️ All {original_rows} rows filtered out - no data in date range\n")
-                return None
-
-            if total_removed > 0:
-                self._emit_log_and_count(
-                    f"   ✓ Date filter complete: {filtered_rows} rows remain "
-                    f"({total_removed} removed)\n"
-                )
-            else:
-                self._emit_log_and_count(f"   ✓ No rows filtered (all within range)\n")
-
-            # Save filtered file (overwrite the downloaded file)
-            df.to_excel(file_path, index=False, engine='openpyxl')
-
-            return file_path
-
-        except Exception as e:
-            self._emit_log_and_count(f"   ⚠️ Date filter error: {str(e)}\n")
-            return file_path  # Continue with unfiltered file on error
 
 
 # ---------------------------------------------------------------------
@@ -466,7 +334,7 @@ class MainWindow(QMainWindow):
         self.date_start.setCalendarPopup(True)
         self.date_start.setDisplayFormat("yyyy-MM-dd")
         self.date_start.setEnabled(False)
-        self.date_start.setDate(QDate.currentDate().addMonths(-1))  # Default: 1 month ago
+        self.date_start.setDate(QDate.currentDate().addMonths(-1))
 
         # End date
         end_label = QLabel("To:")
@@ -474,7 +342,7 @@ class MainWindow(QMainWindow):
         self.date_end.setCalendarPopup(True)
         self.date_end.setDisplayFormat("yyyy-MM-dd")
         self.date_end.setEnabled(False)
-        self.date_end.setDate(QDate.currentDate())  # Default: today
+        self.date_end.setDate(QDate.currentDate())
 
         date_pickers_layout.addWidget(start_label)
         date_pickers_layout.addWidget(self.date_start)
@@ -487,7 +355,7 @@ class MainWindow(QMainWindow):
 
         # Info label
         self.lbl_date_info = QLabel(
-            "ℹ️ Filter rows by action_date. Blank start = file's start_date, blank end = today."
+            "ℹ️ Filter rows by action_date. Format: YYYY-MM-DD"
         )
         self.lbl_date_info.setStyleSheet("color: gray; font-size: 10px;")
         date_filter_layout.addWidget(self.lbl_date_info)
@@ -541,20 +409,6 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(btn_layout)
 
         # ========== COLLAPSIBLE CONSOLE SECTION ==========
-        # Use QSplitter for resizable console
-        splitter = QSplitter(Qt.Orientation.Vertical)
-
-        # Top widget (file list - already added above, so we create empty placeholder)
-        top_widget = QWidget()
-        top_layout = QVBoxLayout()
-        top_widget.setLayout(top_layout)
-
-        # Bottom widget (console)
-        console_widget = QWidget()
-        console_layout = QVBoxLayout()
-        console_widget.setLayout(console_layout)
-
-        # Console header with collapse button
         console_header = QHBoxLayout()
         console_label = QLabel("Console Output:")
         console_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
@@ -567,7 +421,7 @@ class MainWindow(QMainWindow):
         console_header.addStretch()
         console_header.addWidget(self.btn_toggle_console)
 
-        console_layout.addLayout(console_header)
+        main_layout.addLayout(console_header)
 
         # Console-style log output
         self.log_text = QTextEdit()
@@ -576,15 +430,8 @@ class MainWindow(QMainWindow):
         self.log_text.setStyleSheet(
             "font-family: Consolas, 'Courier New', monospace; font-size: 11px;"
         )
-        console_layout.addWidget(self.log_text)
-
-        # Add to splitter (not used in this simple version, but prepared for future)
-        # For now, just add console directly to main layout
-        main_layout.addLayout(console_header)
-        main_layout.addWidget(self.log_text)
-
-        # Set initial sizes (file list gets more space)
         self.log_text.setMaximumHeight(200)
+        main_layout.addWidget(self.log_text)
 
     # ---------------------- Console Toggle ----------------------
 
@@ -609,28 +456,16 @@ class MainWindow(QMainWindow):
     # ---------------------- Drive Loading ----------------------
 
     def _append_log(self, text: str):
-        """
-        Append text to log window and scroll to bottom.
-        """
-        # Move cursor to end
+        """Append text to log window and scroll to bottom."""
         cursor = self.log_text.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_text.setTextCursor(cursor)
-
-        # Insert text
         self.log_text.insertPlainText(text)
-
-        # Ensure view is scrolled to bottom
         self.log_text.moveCursor(QTextCursor.MoveOperation.End)
 
     def _load_drive_files(self):
-        """
-        Read credentials and list all Excel files in the configured folder.
-        User is not allowed to change the folder.
-        """
-        self._append_log(
-            f"🔄 Reading credentials from: {LINK_FILE}\n"
-        )
+        """Read credentials and list all Excel files in the configured folder."""
+        self._append_log(f"🔄 Reading credentials from: {LINK_FILE}\n")
         api_key, folder_id = read_credentials_file(LINK_FILE)
 
         if not api_key or not folder_id:
@@ -669,9 +504,7 @@ class MainWindow(QMainWindow):
             ]
 
             if not self.drive_files:
-                self._append_log(
-                    "⚠️ No Excel files found in the folder.\n"
-                )
+                self._append_log("⚠️ No Excel files found in the folder.\n")
                 QMessageBox.information(
                     self,
                     "No Files",
@@ -813,12 +646,12 @@ class MainWindow(QMainWindow):
             "Initializing...",
             "Cancel",
             0,
-            100,  # Percentage-based (0-100)
+            100,
             self,
         )
         self.progress_dialog.setWindowTitle("Processing Files")
         self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        self.progress_dialog.setMinimumDuration(0)  # Show immediately
+        self.progress_dialog.setMinimumDuration(0)
         self.progress_dialog.setValue(0)
 
         # Start background worker
@@ -887,16 +720,9 @@ class MainWindow(QMainWindow):
 # ---------------------------------------------------------------------
 
 def launch():
-    """
-    Launch the PyQt6 GUI.
-    Usage:
-        python -m doc_validator.interface.gui_qt
-    """
+    """Launch the PyQt6 GUI."""
     app = QApplication(sys.argv)
-
-    # Optional: Set application-wide stylesheet for better appearance
     app.setStyle("Fusion")
-
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
