@@ -10,3 +10,4 @@ doc_validator/link.txt
 /doc_validator/core/__pycache__
 *.pyc
 *.pyc
+*.pyc
