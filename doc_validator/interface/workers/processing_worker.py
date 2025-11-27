@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 
 import sys
 
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
+from PyQt6.QtCore import QThread, pyqtSignal, QObject, Qt  # Add Qt here
 
 from doc_validator.core.drive_io import (
     authenticate_drive_api,
@@ -147,21 +147,19 @@ class ProcessingWorker(QThread):
 
     def run(self) -> None:  # type: ignore[override]
         """
-        Run in the background thread:
-          * authenticate
-          * download each selected file
-          * process it with process_excel
-          * stream console output back to the GUI
+        Run in the background thread.
         """
         results: List[Dict[str, Any]] = []
 
         # Redirect stdout so all prints from process_excel() also show up
         # in the GUI's log window.
         original_stdout = sys.stdout
+        original_stderr = sys.stderr
         emitter = LogEmitter()
         stream = EmittingStream(emitter, original_stdout)
-        emitter.message.connect(self._emit_log_and_count)
+        emitter.message.connect(self._emit_log_and_count, Qt.ConnectionType.QueuedConnection)
         sys.stdout = stream
+        sys.stderr = stream  # Also redirect stderr
 
         try:
             self._emit_log_and_count("Authenticating with Google Drive API...\n")
@@ -256,7 +254,16 @@ class ProcessingWorker(QThread):
             self._emit_log_and_count(f"\n✗ ERROR: {exc!r}\n")
             self._emit_log_and_count(traceback.format_exc())
         finally:
-            # Restore stdout no matter what
+            # Restore stdout/stderr no matter what
             sys.stdout = original_stdout
+            sys.stderr = original_stderr
+
+            # Disconnect the signal to prevent memory leaks
+            try:
+                emitter.message.disconnect(self._emit_log_and_count)
+            except:
+                pass
+
             # Emit final results back to the GUI
+            # Use QueuedConnection to ensure it's processed in the main thread
             self.finished_with_results.emit(results)

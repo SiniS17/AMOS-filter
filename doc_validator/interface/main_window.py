@@ -22,7 +22,6 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QHeaderView,
-    QProgressDialog,
 )
 
 from doc_validator.config import LINK_FILE
@@ -53,9 +52,6 @@ class MainWindow(QMainWindow):
 
         # Worker thread reference
         self.worker: Optional[ProcessingWorker] = None
-
-        # Progress dialog reference
-        self.progress_dialog: Optional[QProgressDialog] = None
 
         # Build UI
         self._setup_ui()
@@ -136,6 +132,41 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.btn_run)
 
         main_layout.addLayout(btn_layout)
+
+        # ========== PROGRESS SECTION (NEW) ==========
+        from PyQt6.QtWidgets import QProgressBar
+
+        # Progress container (hidden by default)
+        self.progress_container = QWidget()
+        progress_layout = QVBoxLayout()
+        progress_layout.setContentsMargins(0, 5, 0, 5)
+        self.progress_container.setLayout(progress_layout)
+
+        self.progress_label = QLabel("")
+        self.progress_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        progress_layout.addWidget(self.progress_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                text-align: center;
+                height: 25px;
+            }
+            QProgressBar::chunk {
+                background-color: #2196F3;
+                border-radius: 3px;
+            }
+        """)
+        progress_layout.addWidget(self.progress_bar)
+
+        self.progress_container.hide()  # Hidden by default
+        main_layout.addWidget(self.progress_container)
 
         # ========== CONSOLE OUTPUT ==========
         console_header = QHBoxLayout()
@@ -357,18 +388,14 @@ class MainWindow(QMainWindow):
 
         self._append_log(
             "\n" + "=" * 60 + "\n"
-            "▶ Starting processing of selected files...\n"
+                              "▶ Starting processing of selected files...\n"
             + "=" * 60 + "\n"
         )
 
-        # Create progress dialog
-        self.progress_dialog = QProgressDialog(
-            "Processing files...", "Cancel", 0, 100, self
-        )
-        self.progress_dialog.setWindowTitle("Processing")
-        self.progress_dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.progress_dialog.canceled.connect(self._cancel_worker)
-        self.progress_dialog.show()
+        # Show progress bar
+        self.progress_container.show()
+        self.progress_bar.setValue(0)
+        self.progress_label.setText("Starting...")
 
         # Create and start worker thread
         self.worker = ProcessingWorker(
@@ -379,28 +406,33 @@ class MainWindow(QMainWindow):
             filter_end_date=filter_end,
         )
 
+        # Connect signals
         self.worker.log_message.connect(self._append_log)
         self.worker.progress_updated.connect(self._update_progress)
         self.worker.finished_with_results.connect(self._on_processing_finished)
+        self.worker.finished.connect(self._on_worker_thread_finished)
+
         self.worker.start()
 
-    def _cancel_worker(self) -> None:
-        if self.worker is not None:
-            self.worker.cancel()
-            self._append_log("\n⚠️ Cancellation requested...\n")
+    def _on_worker_thread_finished(self) -> None:
+        """Called when worker thread actually finishes (Qt's finished signal)."""
+        # This ensures the thread is properly cleaned up
+        if self.worker:
+            self.worker.deleteLater()
+            self.worker = None
 
     def _update_progress(self, value: int, status: str) -> None:
-        if self.progress_dialog:
-            self.progress_dialog.setValue(value)
-            self.progress_dialog.setLabelText(status)
+        """Update the embedded progress bar and label."""
+        self.progress_bar.setValue(value)
+        self.progress_label.setText(status)
 
     def _on_processing_finished(self, results: list) -> None:
-        # Re-enable UI
+        # Hide progress bar
+        self.progress_container.hide()
+
+        # Re-enable UI immediately
         self.btn_run.setEnabled(True)
         self.btn_refresh.setEnabled(True)
-        if self.progress_dialog:
-            self.progress_dialog.close()
-            self.progress_dialog = None
 
         # Summarize results
         success_count = sum(1 for r in results if r.get("output_file"))
@@ -421,6 +453,7 @@ class MainWindow(QMainWindow):
 
         msg += f"\n\nOutput directory:\n{DATA_FOLDER}"
 
+        # Show completion message
         QMessageBox.information(
             self,
             "Processing Complete",
@@ -428,10 +461,19 @@ class MainWindow(QMainWindow):
         )
 
 
+
 def launch() -> None:
     """Launch the PyQt6 GUI."""
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+
+    # Prevent app from quitting when last window closes (if you have hidden windows)
+    app.setQuitOnLastWindowClosed(True)
+
     window = MainWindow()
     window.show()
+
+    # Store reference to prevent garbage collection
+    app.main_window = window
+
     sys.exit(app.exec())
