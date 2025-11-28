@@ -1,30 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
 from typing import List, Dict, Any, Optional
 
 import sys
 
-from PyQt6.QtCore import QThread, pyqtSignal, QObject, Qt  # Add Qt here
+from PyQt6.QtCore import QThread, pyqtSignal, QObject, Qt
 
 from doc_validator.core.drive_io import (
     authenticate_drive_api,
     download_file_from_drive,
 )
 from doc_validator.core.excel_pipeline import process_excel
-
-
-# ---------------------------------------------------------------------
-# Helper dataclass for Drive files
-# ---------------------------------------------------------------------
-
-
-@dataclass
-class DriveFileInfo:
-    file_id: str
-    name: str
-    mime_type: str
+from doc_validator.core.input_source_manager import FileInfo
 
 
 # ---------------------------------------------------------------------
@@ -69,8 +57,7 @@ class EmittingStream:
 class ProcessingWorker(QThread):
     """
     Background worker that:
-      * Authenticates with Google Drive
-      * Downloads each selected file
+      * Processes local files OR downloads Drive files
       * Runs the Excel processing pipeline (process_excel)
       * Emits log lines and progress updates back to the GUI
     """
@@ -80,13 +67,13 @@ class ProcessingWorker(QThread):
     finished_with_results = pyqtSignal(list)
 
     def __init__(
-        self,
-        api_key: str,
-        folder_id: str,
-        selected_files: List[DriveFileInfo],
-        filter_start_date: Optional[date] = None,
-        filter_end_date: Optional[date] = None,
-        parent: Optional[QObject] = None,
+            self,
+            api_key: Optional[str],
+            folder_id: Optional[str],
+            selected_files: List[FileInfo],
+            filter_start_date: Optional[date] = None,
+            filter_end_date: Optional[date] = None,
+            parent: Optional[QObject] = None,
     ):
         super().__init__(parent)
         self.api_key = api_key
@@ -114,9 +101,6 @@ class ProcessingWorker(QThread):
     def _emit_log_and_count(self, message: str) -> None:
         """
         Emit log message and update progress estimate based on line count.
-
-        This keeps the progress bar moving smoothly even though the
-        underlying pipeline just prints text.
         """
         if not message:
             return
@@ -151,74 +135,101 @@ class ProcessingWorker(QThread):
         """
         results: List[Dict[str, Any]] = []
 
-        # Redirect stdout so all prints from process_excel() also show up
-        # in the GUI's log window.
+        # Redirect stdout so all prints from process_excel() show up in GUI
         original_stdout = sys.stdout
         original_stderr = sys.stderr
         emitter = LogEmitter()
         stream = EmittingStream(emitter, original_stdout)
         emitter.message.connect(self._emit_log_and_count, Qt.ConnectionType.QueuedConnection)
         sys.stdout = stream
-        sys.stderr = stream  # Also redirect stderr
+        sys.stderr = stream
 
         try:
-            self._emit_log_and_count("Authenticating with Google Drive API...\n")
-            self.progress_updated.emit(5, "Authenticating...")
+            # Check if we need Drive authentication
+            need_drive = any(f.source_type == "drive" for f in self.selected_files)
+            drive_service = None
 
-            drive_service = authenticate_drive_api(self.api_key)
-            self._emit_log_and_count("✓ Authentication successful.\n\n")
-            self.progress_updated.emit(10, "Authentication successful")
+            if need_drive:
+                if not self.api_key or not self.folder_id:
+                    self._emit_log_and_count(
+                        "❌ ERROR: Drive files selected but credentials not configured.\n"
+                    )
+                    return
+
+                self._emit_log_and_count("Authenticating with Google Drive API...\n")
+                self.progress_updated.emit(5, "Authenticating...")
+                drive_service = authenticate_drive_api(self.api_key)
+                self._emit_log_and_count("✓ Authentication successful.\n\n")
+                self.progress_updated.emit(10, "Authentication successful")
 
             total = len(self.selected_files)
-            self._emit_log_and_count(
-                f"Processing {total} selected file(s) from Drive folder...\n"
-            )
+            self._emit_log_and_count(f"Processing {total} selected file(s)...\n")
 
             for idx, file_info in enumerate(self.selected_files, start=1):
                 if self._cancelled:
                     self._emit_log_and_count("\n⚠️ Processing cancelled by user.\n")
                     break
 
-                # Update high-level progress per file
+                # Update progress
                 if total > 0:
                     pct = int(10 + (idx - 1) / total * 85)
                 else:
                     pct = 10
                 self.progress_updated.emit(pct, f"[{idx}/{total}] {file_info.name}")
 
-                # Nice separator in the log
+                # Nice separator
                 self._emit_log_and_count(
                     "\n" + "=" * 60 + "\n"
                     + f"[{idx}/{total}] {file_info.name}\n"
                     + "=" * 60 + "\n"
                 )
 
-                # Download to a temporary GUI folder (DATA/temp_gui)
-                wp_placeholder = "temp_gui"
-                local_path = download_file_from_drive(
-                    drive_service,
-                    file_info.file_id,
-                    wp_placeholder,
-                    file_info.name,
-                )
+                local_path = None
 
-                if not local_path:
-                    self._emit_log_and_count(
-                        f"✗ Failed to download file: {file_info.name}\n"
-                    )
-                    results.append(
-                        {
+                # Handle file based on source type
+                if file_info.source_type == "local":
+                    # Local file - already have path
+                    local_path = file_info.local_path
+                    self._emit_log_and_count(f"Local file: {local_path}\n")
+
+                elif file_info.source_type == "drive":
+                    # Drive file - need to download
+                    if not drive_service:
+                        self._emit_log_and_count(
+                            "✗ ERROR: Drive service not initialized\n"
+                        )
+                        results.append({
                             "source_name": file_info.name,
                             "source_id": file_info.file_id,
                             "local_path": None,
                             "output_file": None,
-                        }
+                        })
+                        continue
+
+                    self._emit_log_and_count(f"Downloading from Drive...\n")
+                    wp_placeholder = "temp_gui"
+                    local_path = download_file_from_drive(
+                        drive_service,
+                        file_info.file_id,
+                        wp_placeholder,
+                        file_info.name,
                     )
-                    continue
 
-                self._emit_log_and_count(f"Local file path: {local_path}\n")
+                    if not local_path:
+                        self._emit_log_and_count(
+                            f"✗ Failed to download file: {file_info.name}\n"
+                        )
+                        results.append({
+                            "source_name": file_info.name,
+                            "source_id": file_info.file_id,
+                            "local_path": None,
+                            "output_file": None,
+                        })
+                        continue
 
-                # Run the Excel processing pipeline (date filtering handled inside)
+                    self._emit_log_and_count(f"Downloaded to: {local_path}\n")
+
+                # Process the Excel file
                 output_file = process_excel(
                     local_path,
                     filter_start_date=self.filter_start_date,
@@ -235,35 +246,31 @@ class ProcessingWorker(QThread):
                         f"✗ Processing failed for {file_info.name}\n"
                     )
 
-                results.append(
-                    {
-                        "source_name": file_info.name,
-                        "source_id": file_info.file_id,
-                        "local_path": local_path,
-                        "output_file": output_file,
-                    }
-                )
+                results.append({
+                    "source_name": file_info.name,
+                    "source_id": file_info.file_id if file_info.source_type == "drive" else None,
+                    "local_path": local_path,
+                    "output_file": output_file,
+                })
 
             if not self._cancelled:
                 self._emit_log_and_count("\n✓ All selected files have been processed.\n")
                 self.progress_updated.emit(100, "Complete!")
 
-        except Exception as exc:  # defensive
+        except Exception as exc:
             import traceback
-
             self._emit_log_and_count(f"\n✗ ERROR: {exc!r}\n")
             self._emit_log_and_count(traceback.format_exc())
         finally:
-            # Restore stdout/stderr no matter what
+            # Restore stdout/stderr
             sys.stdout = original_stdout
             sys.stderr = original_stderr
 
-            # Disconnect the signal to prevent memory leaks
+            # Disconnect signal
             try:
                 emitter.message.disconnect(self._emit_log_and_count)
             except:
                 pass
 
-            # Emit final results back to the GUI
-            # Use QueuedConnection to ensure it's processed in the main thread
+            # Emit final results
             self.finished_with_results.emit(results)

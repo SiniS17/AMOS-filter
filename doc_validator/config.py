@@ -24,6 +24,12 @@ LINK_FILE = str(BASE_DIR / "bin" / "link.txt")
 DATA_FOLDER = str(BASE_DIR / "DATA")
 Path(DATA_FOLDER).mkdir(exist_ok=True)
 
+# ------------------------------------------------------------
+# Input folder (for local Excel files)
+# ------------------------------------------------------------
+INPUT_FOLDER = str(BASE_DIR / "INPUT")
+Path(INPUT_FOLDER).mkdir(exist_ok=True)
+
 # Subfolder for log inside each WP folder
 LOG_FOLDER = "log"
 

@@ -22,20 +22,23 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QHeaderView,
+    QLineEdit,
+    QComboBox,
+    QFileDialog,
+    QGroupBox,
 )
 
-from doc_validator.config import LINK_FILE
-from doc_validator.core.drive_io import (
-    authenticate_drive_api,
-    get_all_excel_files_from_folder,
-    read_credentials_file,
+from doc_validator.config import LINK_FILE, INPUT_FOLDER
+from doc_validator.core.drive_io import read_credentials_file
+from doc_validator.core.input_source_manager import (
+    FileInfo,
+    get_local_excel_files,
+    get_drive_excel_files,
+    get_default_input_folder,
 )
 
 from doc_validator.interface.panels.date_filter_panel import DateFilterPanel
-from doc_validator.interface.workers.processing_worker import (
-    ProcessingWorker,
-    DriveFileInfo,
-)
+from doc_validator.interface.workers.processing_worker import ProcessingWorker
 
 
 class MainWindow(QMainWindow):
@@ -43,12 +46,17 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
 
         self.setWindowTitle("AMOSFilter - Documentation Validator")
-        self.resize(1000, 700)
+        self.resize(1000, 750)
 
         # Credentials / Drive folder info
         self.api_key: Optional[str] = None
         self.folder_id: Optional[str] = None
-        self.drive_files: List[DriveFileInfo] = []
+
+        # File source management
+        self.all_files: List[FileInfo] = []  # All loaded files
+        self.filtered_files: List[FileInfo] = []  # Files after search filter
+        self.current_source_type: str = "local"  # "local" or "drive"
+        self.current_local_path: str = get_default_input_folder()
 
         # Worker thread reference
         self.worker: Optional[ProcessingWorker] = None
@@ -56,8 +64,11 @@ class MainWindow(QMainWindow):
         # Build UI
         self._setup_ui()
 
-        # Load Drive file list on startup
-        self._load_drive_files()
+        # Load credentials for Drive option
+        self._load_credentials()
+
+        # Load files from default source (INPUT folder)
+        self._load_files_from_current_source()
 
     # ---------------------- UI Setup ----------------------
 
@@ -68,12 +79,52 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout()
         central.setLayout(main_layout)
 
+        # ========== INPUT SOURCE SELECTION ==========
+        source_group = QGroupBox("Input Source")
+        source_layout = QVBoxLayout()
+        source_group.setLayout(source_layout)
+
+        # Source type selector
+        source_row = QHBoxLayout()
+        source_row.addWidget(QLabel("Load files from:"))
+
+        self.combo_source = QComboBox()
+        self.combo_source.addItem("Local Folder (INPUT)", "local")
+        self.combo_source.addItem("Google Drive", "drive")
+        self.combo_source.currentIndexChanged.connect(self._on_source_changed)
+        source_row.addWidget(self.combo_source)
+        source_row.addStretch()
+
+        source_layout.addLayout(source_row)
+
+        # Local folder selection row
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(QLabel("Folder:"))
+
+        self.label_folder_path = QLabel(get_default_input_folder())
+        self.label_folder_path.setStyleSheet("color: #2196F3; font-family: monospace;")
+        folder_row.addWidget(self.label_folder_path, stretch=1)
+
+        self.btn_browse_folder = QPushButton("📁 Browse...")
+        self.btn_browse_folder.clicked.connect(self._browse_local_folder)
+        folder_row.addWidget(self.btn_browse_folder)
+
+        source_layout.addLayout(folder_row)
+
+        # Drive info label (hidden by default)
+        self.label_drive_info = QLabel("Using configured Google Drive folder")
+        self.label_drive_info.setStyleSheet("color: #4CAF50; font-style: italic;")
+        self.label_drive_info.hide()
+        source_layout.addWidget(self.label_drive_info)
+
+        main_layout.addWidget(source_group)
+
         # ========== TOP TOOLBAR ==========
         toolbar_layout = QHBoxLayout()
 
         self.btn_refresh = QPushButton("🔄 Refresh")
-        self.btn_refresh.setToolTip("Refresh file list from Google Drive")
-        self.btn_refresh.clicked.connect(self._load_drive_files)
+        self.btn_refresh.setToolTip("Refresh file list from current source")
+        self.btn_refresh.clicked.connect(self._load_files_from_current_source)
 
         self.btn_open_folder = QPushButton("📁 Open Output Folder")
         self.btn_open_folder.setToolTip("Open the DATA folder (root output directory)")
@@ -89,20 +140,35 @@ class MainWindow(QMainWindow):
         self.date_filter_panel = DateFilterPanel(self)
         main_layout.addWidget(self.date_filter_panel)
 
+        # ========== SEARCH BAR ==========
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("🔍 Search:"))
+
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Type to filter files by name...")
+        self.search_bar.textChanged.connect(self._on_search_changed)
+        self.search_bar.setClearButtonEnabled(True)
+        search_layout.addWidget(self.search_bar)
+
+        main_layout.addLayout(search_layout)
+
         # ========== FILE LIST SECTION ==========
-        file_section_label = QLabel("Excel files in configured Google Drive folder:")
+        file_section_label = QLabel("Excel files:")
         file_section_label.setStyleSheet("font-weight: bold; font-size: 13px;")
         main_layout.addWidget(file_section_label)
 
         # Table of files
         self.table = QTableWidget()
-        self.table.setColumnCount(2)
-        self.table.setHorizontalHeaderLabels(["Process?", "File Name"])
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Process?", "File Name", "Source"])
         self.table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
         )
         self.table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
         )
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(
@@ -166,7 +232,7 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(btn_layout)
 
-        # ========== PROGRESS SECTION (NEW) ==========
+        # ========== PROGRESS SECTION ==========
         from PyQt6.QtWidgets import QProgressBar
 
         # Progress container (hidden by default)
@@ -247,17 +313,88 @@ class MainWindow(QMainWindow):
         self.log_text.insertPlainText(text)
         self.log_text.moveCursor(QTextCursor.MoveOperation.End)
 
-    # ---------------------- Drive Loading ----------------------
+    # ---------------------- Credentials Loading ----------------------
+
+    def _load_credentials(self) -> None:
+        """Load Google Drive credentials for Drive option."""
+        api_key, folder_id = read_credentials_file(LINK_FILE)
+        if api_key and folder_id:
+            self.api_key = api_key
+            self.folder_id = folder_id
+            self._append_log(f"✓ Drive credentials loaded from {LINK_FILE}\n")
+        else:
+            self._append_log(
+                f"⚠️  Drive credentials not found in {LINK_FILE}\n"
+                "   (Google Drive option will not work)\n"
+            )
+
+    # ---------------------- Source Management ----------------------
+
+    def _on_source_changed(self, index: int) -> None:
+        """Handle source type change."""
+        source_type = self.combo_source.currentData()
+        self.current_source_type = source_type
+
+        # Show/hide appropriate controls
+        if source_type == "local":
+            self.label_folder_path.show()
+            self.btn_browse_folder.show()
+            self.label_drive_info.hide()
+        else:  # drive
+            self.label_folder_path.hide()
+            self.btn_browse_folder.hide()
+            self.label_drive_info.show()
+
+        # Reload files
+        self._load_files_from_current_source()
+
+    def _browse_local_folder(self) -> None:
+        """Let user select a different local folder."""
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Input Folder",
+            self.current_local_path,
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        if folder:
+            self.current_local_path = folder
+            self.label_folder_path.setText(folder)
+            self._load_files_from_current_source()
+
+    def _load_files_from_current_source(self) -> None:
+        """Load files based on currently selected source."""
+        self.log_text.clear()
+        self.search_bar.clear()  # Clear search when reloading
+
+        if self.current_source_type == "local":
+            self._load_local_files()
+        else:
+            self._load_drive_files()
+
+    def _load_local_files(self) -> None:
+        """Load files from local folder."""
+        self._append_log(f"📂 Loading files from: {self.current_local_path}\n")
+
+        self.all_files = get_local_excel_files(self.current_local_path)
+
+        if not self.all_files:
+            self._append_log(
+                "⚠️  No Excel files found in folder.\n"
+                f"   Place .xlsx or .xls files in: {self.current_local_path}\n"
+            )
+        else:
+            self._append_log(f"✓ Found {len(self.all_files)} Excel file(s)\n")
+
+        self.filtered_files = self.all_files.copy()
+        self._populate_table()
 
     def _load_drive_files(self) -> None:
-        """Read credentials and list all Excel files in the configured folder."""
-        self.log_text.clear()
-        self._append_log(f"🔄 Reading credentials from: {LINK_FILE}\n")
-        api_key, folder_id = read_credentials_file(LINK_FILE)
-
-        if not api_key or not folder_id:
+        """Load files from Google Drive."""
+        if not self.api_key or not self.folder_id:
             self._append_log(
-                "❌ ERROR: Invalid credentials (GG_API_KEY or GG_FOLDER_ID missing).\n"
+                "❌ ERROR: Drive credentials not configured.\n"
+                f"   Please check: {LINK_FILE}\n"
             )
             QMessageBox.critical(
                 self,
@@ -267,34 +404,22 @@ class MainWindow(QMainWindow):
             self.btn_run.setEnabled(False)
             return
 
-        self.api_key = api_key
-        self.folder_id = folder_id
-
         try:
             self._append_log("🔐 Authenticating with Google Drive API...\n")
-            drive_service = authenticate_drive_api(self.api_key)
-            self._append_log("✓ Authentication successful.\n")
-            self._append_log(
-                "📂 Fetching Excel file list from configured folder...\n"
-            )
+            self._append_log("📂 Fetching Excel file list from Drive folder...\n")
 
-            self.drive_files = [
-                DriveFileInfo(
-                    file_id=f["id"],
-                    name=f["name"],
-                    mime_type=f.get("mimeType", ""),
-                )
-                for f in get_all_excel_files_from_folder(drive_service, self.folder_id)
-            ]
+            self.all_files = get_drive_excel_files(self.api_key, self.folder_id)
 
-            self._append_log(
-                f"✓ Found {len(self.drive_files)} Excel file(s) in the folder.\n"
-            )
+            if not self.all_files:
+                self._append_log("⚠️  No Excel files found in Drive folder.\n")
+            else:
+                self._append_log(f"✓ Found {len(self.all_files)} Excel file(s)\n")
+
+            self.filtered_files = self.all_files.copy()
             self._populate_table()
 
-        except Exception as e:  # defensive
+        except Exception as e:
             import traceback
-
             self._append_log(f"\n✗ ERROR while loading Drive files: {e!r}\n")
             self._append_log(traceback.format_exc())
             QMessageBox.critical(
@@ -303,25 +428,60 @@ class MainWindow(QMainWindow):
                 f"Could not load files from Google Drive:\n{e}",
             )
 
+    # ---------------------- Search Functionality ----------------------
+
+    def _on_search_changed(self, text: str) -> None:
+        """Filter files based on search text."""
+        search_text = text.strip().lower()
+
+        if not search_text:
+            # No search - show all files
+            self.filtered_files = self.all_files.copy()
+        else:
+            # Filter by filename
+            self.filtered_files = [
+                f for f in self.all_files
+                if search_text in f.name.lower()
+            ]
+
+        self._populate_table()
+
+        # Update log
+        if search_text:
+            self._append_log(
+                f"🔍 Search: '{text}' - "
+                f"showing {len(self.filtered_files)}/{len(self.all_files)} files\n"
+            )
+
+    # ---------------------- Table Population ----------------------
+
     def _populate_table(self) -> None:
+        """Populate table with filtered files."""
         self.table.setRowCount(0)
 
-        for row_idx, file_info in enumerate(self.drive_files):
+        for row_idx, file_info in enumerate(self.filtered_files):
             self.table.insertRow(row_idx)
 
-            # Checkbox item - centered and styled for dark mode
+            # Checkbox item
             chk_item = QTableWidgetItem()
             chk_item.setFlags(
                 Qt.ItemFlag.ItemIsUserCheckable
                 | Qt.ItemFlag.ItemIsEnabled
             )
             chk_item.setCheckState(Qt.CheckState.Unchecked)
-            chk_item.setText("")  # Remove any text
-            chk_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)  # Center the checkbox
+            chk_item.setText("")
+            chk_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row_idx, 0, chk_item)
 
+            # File name
             name_item = QTableWidgetItem(file_info.name)
             self.table.setItem(row_idx, 1, name_item)
+
+            # Source indicator
+            source_text = "📁 Local" if file_info.source_type == "local" else "☁️ Drive"
+            source_item = QTableWidgetItem(source_text)
+            source_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setItem(row_idx, 2, source_item)
 
         self.table.resizeRowsToContents()
 
@@ -360,7 +520,7 @@ class MainWindow(QMainWindow):
                 subprocess.Popen(["open", DATA_FOLDER])
             else:  # Linux
                 subprocess.Popen(["xdg-open", DATA_FOLDER])
-        except Exception as e:  # defensive
+        except Exception as e:
             QMessageBox.critical(
                 self,
                 "Error Opening Folder",
@@ -370,19 +530,12 @@ class MainWindow(QMainWindow):
     # ---------------------- Run Button / Worker ----------------------
 
     def _on_run_clicked(self) -> None:
-        if not self.api_key or not self.folder_id:
-            QMessageBox.critical(
-                self,
-                "Credentials Error",
-                "Cannot run: API key or folder ID is not set.",
-            )
-            return
-
-        selected_files: List[DriveFileInfo] = []
+        # Get selected files
+        selected_files: List[FileInfo] = []
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
             if item and item.checkState() == Qt.CheckState.Checked:
-                selected_files.append(self.drive_files[row])
+                selected_files.append(self.filtered_files[row])
 
         if not selected_files:
             QMessageBox.warning(
@@ -392,11 +545,11 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Disable Run button while processing
+        # Disable UI while processing
         self.btn_run.setEnabled(False)
         self.btn_refresh.setEnabled(False)
 
-        # Get date filter settings from panel
+        # Get date filter settings
         filter_start: Optional[date] = None
         filter_end: Optional[date] = None
 
@@ -452,14 +605,13 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def _on_worker_thread_finished(self) -> None:
-        """Called when worker thread actually finishes (Qt's finished signal)."""
-        # This ensures the thread is properly cleaned up
+        """Called when worker thread finishes."""
         if self.worker:
             self.worker.deleteLater()
             self.worker = None
 
     def _update_progress(self, value: int, status: str) -> None:
-        """Update the embedded progress bar and label."""
+        """Update progress bar and label."""
         self.progress_bar.setValue(value)
         self.progress_label.setText(status)
 
@@ -467,7 +619,7 @@ class MainWindow(QMainWindow):
         # Hide progress bar
         self.progress_container.hide()
 
-        # Re-enable UI immediately
+        # Re-enable UI
         self.btn_run.setEnabled(True)
         self.btn_refresh.setEnabled(True)
 
@@ -490,7 +642,6 @@ class MainWindow(QMainWindow):
 
         msg += f"\n\nOutput directory:\n{DATA_FOLDER}"
 
-        # Show completion message
         QMessageBox.information(
             self,
             "Processing Complete",
@@ -498,19 +649,16 @@ class MainWindow(QMainWindow):
         )
 
 
-
 def launch() -> None:
     """Launch the PyQt6 GUI."""
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    # Prevent app from quitting when last window closes (if you have hidden windows)
     app.setQuitOnLastWindowClosed(True)
 
     window = MainWindow()
     window.show()
 
-    # Store reference to prevent garbage collection
     app.main_window = window
 
     sys.exit(app.exec())
