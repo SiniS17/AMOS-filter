@@ -3,11 +3,7 @@
 doc_validator/link.txt
 /EXE
 /build
-/DATA
-/DATA/log
 /DATA/log
 /dist
 /doc_validator/core/__pycache__
-*.pyc
-*.pyc
 *.pyc
