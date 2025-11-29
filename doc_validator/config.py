@@ -43,3 +43,7 @@ INVALID_CHARACTERS = r'[\\/*?:"<>|]'
 # ------------------------------------------------------------
 ACTION_STEP_CONTROL_ENABLED_DEFAULT = True
 ACTION_STEP_SHEET_NAME = "ActionStepControl"
+
+# Optional per-WO summary sheet from ASC
+ACTION_STEP_SUMMARY_ENABLED_DEFAULT = True
+ACTION_STEP_SUMMARY_SHEET_NAME = "ASC_Summary"

@@ -725,7 +725,6 @@ class MainWindow(QMainWindow):
     def _on_processing_finished(self, results: list) -> None:
         self.progress_container.hide()
         self.btn_run.setEnabled(True)
-        self.btn_refresh.setEnabled(True)
 
         # Update status column
         for i, result in enumerate(results):

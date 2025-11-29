@@ -5,7 +5,13 @@ from datetime import datetime, date
 import pandas as pd
 
 from doc_validator.validation.engine import check_ref_keywords
-from doc_validator.config import ACTION_STEP_CONTROL_ENABLED_DEFAULT, ACTION_STEP_SHEET_NAME
+from doc_validator.config import (
+    ACTION_STEP_CONTROL_ENABLED_DEFAULT,
+    ACTION_STEP_SHEET_NAME,
+    ACTION_STEP_SUMMARY_ENABLED_DEFAULT,
+    ACTION_STEP_SUMMARY_SHEET_NAME,
+)
+from doc_validator.tools.action_step_control import compute_action_step_control_df
 from doc_validator.tools.action_step_control import compute_action_step_control_df
 from doc_validator.validation.helpers import (
     contains_header_skip_keyword,
@@ -22,10 +28,10 @@ from .excel_io import (
 
 
 def run_action_step_control_hook(
-        df: pd.DataFrame,
-        wp_value: str,
-        source_file: str,
-        enable_action_step_control: bool = ACTION_STEP_CONTROL_ENABLED_DEFAULT,
+    df: pd.DataFrame,
+    wp_value: str,
+    source_file: str,
+    enable_action_step_control: bool = ACTION_STEP_CONTROL_ENABLED_DEFAULT,
 ) -> dict[str, pd.DataFrame] | None:
     """
     Hook to compute extra sheets for Action Step Control.
@@ -41,13 +47,22 @@ def run_action_step_control_hook(
 
         extra_sheets: dict[str, pd.DataFrame] = {
             ACTION_STEP_SHEET_NAME: asc_df,
-            # Later we could add another sheet, e.g. "ASC_Summary": summary_df
         }
+
+        if ACTION_STEP_SUMMARY_ENABLED_DEFAULT and not summary_df.empty:
+            extra_sheets[ACTION_STEP_SUMMARY_SHEET_NAME] = summary_df
+
+        print(
+            f"[ASC] Added sheets: {', '.join(extra_sheets.keys())} "
+            f"for WP={asc_wp or wp_value}"
+        )
+
         return extra_sheets
 
     except Exception as e:
         print(f"[ASC] Error while computing Action Step Control: {e}")
         return None
+
 
 
 def validate_dataframe(df: pd.DataFrame) -> tuple[bool, str | None]:
@@ -422,6 +437,9 @@ def process_excel(
             filter_end_date=filter_end_date,
         )
 
+        # Snapshot for Action Step Control BEFORE validation mutates df
+        df_for_action_step_control = df.copy()
+
         if df.empty:
             print("   ✗ No data remains after date filtering")
             return None
@@ -551,12 +569,15 @@ def process_excel(
 
         # --- Action Step Control hook (stub for now) ---
         extra_sheets = run_action_step_control_hook(
-            df=df,
+            df=df_for_action_step_control,
             wp_value=cleaned_folder_name,
             source_file=file_path,
             enable_action_step_control=enable_action_step_control,
         )
-
+        if extra_sheets:
+            print(f"   [ASC] Extra sheets: {', '.join(extra_sheets.keys())}")
+        else:
+            print("   [ASC] Action Step Control disabled or not available")
         # ========== STEP 8: Write Excel ==========
         print(f"   Writing to: {output_file}")
         write_output_excel(df, output_file, extra_sheets=extra_sheets)
