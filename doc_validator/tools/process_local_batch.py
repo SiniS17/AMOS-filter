@@ -50,7 +50,7 @@ def get_excel_files(folder_path):
     return excel_files
 
 
-def process_local_batch(folder_path):
+def process_local_batch(folder_path, enable_action_step_control: bool = True):
     """
     Process all Excel files in a local folder.
 
@@ -91,7 +91,10 @@ def process_local_batch(folder_path):
         print(f"{'=' * 60}")
 
         try:
-            output_path = process_excel(file_path)
+            output_path = process_excel(
+                file_path,
+                enable_action_step_control=enable_action_step_control,
+            )
 
             if output_path:
                 processed_files.append(
@@ -140,16 +143,26 @@ def process_local_batch(folder_path):
 def main():
     """Main entry point for local batch processing."""
     if len(sys.argv) < 2:
-        print("Usage: python -m doc_validator.tools.process_local_batch <folder_path>")
+        print("Usage: python -m doc_validator.tools.process_local_batch <folder_path> [--no-asc]")
         print("\nExample:")
         print(
             '  python -m doc_validator.tools.process_local_batch "C:/Users/YourName/Documents/ExcelFiles"'
         )
         print('  python -m doc_validator.tools.process_local_batch "./DATA/raw_files"')
+        print('  python -m doc_validator.tools.process_local_batch "./INPUT" --no-asc')
         sys.exit(1)
 
     folder_path = sys.argv[1]
-    processed_files = process_local_batch(folder_path)
+
+    # Default: ASC enabled
+    enable_asc = True
+    if len(sys.argv) >= 3 and sys.argv[2] == "--no-asc":
+        enable_asc = False
+
+    processed_files = process_local_batch(
+        folder_path,
+        enable_action_step_control=enable_asc,
+    )
 
     if processed_files:
         print(f"\n✅ Success! Processed {len(processed_files)} file(s)")

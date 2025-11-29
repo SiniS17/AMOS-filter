@@ -5,6 +5,8 @@ from datetime import datetime, date
 import pandas as pd
 
 from doc_validator.validation.engine import check_ref_keywords
+from doc_validator.config import ACTION_STEP_CONTROL_ENABLED_DEFAULT, ACTION_STEP_SHEET_NAME
+from doc_validator.tools.action_step_control import compute_action_step_control_df
 from doc_validator.validation.helpers import (
     contains_header_skip_keyword,
     is_seq_auto_valid,
@@ -17,6 +19,35 @@ from .excel_io import (
     write_output_excel,
     sanitize_folder_name,
 )
+
+
+def run_action_step_control_hook(
+        df: pd.DataFrame,
+        wp_value: str,
+        source_file: str,
+        enable_action_step_control: bool = ACTION_STEP_CONTROL_ENABLED_DEFAULT,
+) -> dict[str, pd.DataFrame] | None:
+    """
+    Hook to compute extra sheets for Action Step Control.
+
+    Returns:
+        dict[sheet_name, DataFrame] or None if ASC is disabled or fails.
+    """
+    if not enable_action_step_control:
+        return None
+
+    try:
+        asc_df, summary_df, asc_wp = compute_action_step_control_df(df)
+
+        extra_sheets: dict[str, pd.DataFrame] = {
+            ACTION_STEP_SHEET_NAME: asc_df,
+            # Later we could add another sheet, e.g. "ASC_Summary": summary_df
+        }
+        return extra_sheets
+
+    except Exception as e:
+        print(f"[ASC] Error while computing Action Step Control: {e}")
+        return None
 
 
 def validate_dataframe(df: pd.DataFrame) -> tuple[bool, str | None]:
@@ -235,6 +266,52 @@ def apply_date_filter(
     return df
 
 
+def load_and_filter_for_actions(
+        file_path: str,
+        filter_start_date: date | None = None,
+        filter_end_date: date | None = None,
+) -> tuple[pd.DataFrame, str]:
+    """
+    Prepare a DataFrame for Action Step Control WITHOUT ref/rev validation.
+
+    Steps:
+    - Read the Excel file using the standard settings
+    - Apply the same date filter logic as the main validator
+    - Return (filtered_df, wp_value)
+
+    This keeps ASC separated from ref/rev Reason logic but reuses
+    all the robust input/date handling.
+    """
+    print("\n" + "=" * 60)
+    print("ACTION STEP CONTROL: PREPARING DATA")
+    print("=" * 60)
+
+    # 1) Read Excel
+    print(f"\n1. Reading file for action control: {file_path}")
+    df = read_input_excel(file_path)
+    print(f"   ✓ Read {df.shape[0]} rows, {df.shape[1]} columns")
+
+    # 2) Apply date filter (same rules)
+    print("\n2. Applying date filter (file's start/end + optional user range)...")
+    df = apply_date_filter(
+        df,
+        filter_start_date=filter_start_date,
+        filter_end_date=filter_end_date,
+    )
+
+    if df.empty:
+        print("   ✗ No data remains after date filtering")
+        return df, "No_wp_found"
+
+    print(f"   ✓ {len(df)} rows after date filtering")
+
+    # 3) Extract WP (for folder naming or logging)
+    wp_value = extract_wp_value(df)
+    print(f"   ✓ Detected WP: {wp_value}")
+
+    return df, wp_value
+
+
 def _prepare_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Rename/create wo_text_action.text, SEQ, header columns as in original code."""
     # wo_text_action.text
@@ -301,8 +378,9 @@ def _prepare_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def process_excel(
         file_path: str,
-        filter_start_date: date | None = None,
-        filter_end_date: date | None = None,
+        filter_start_date=None,
+        filter_end_date=None,
+        enable_action_step_control: bool = ACTION_STEP_CONTROL_ENABLED_DEFAULT,
 ) -> str | None:
     """
     Process Excel file with multi-state validation and optional date filtering.
@@ -468,13 +546,20 @@ def process_excel(
         # ========== STEP 7: Prepare Output ==========
         print(f"\n{step_num}. Preparing output file...")
         wp_value = extract_wp_value(df)
-        cleaned_folder_name = sanitize_folder_name(wp_value).replace(" ", "_")
         cleaned_folder_name, output_file = build_output_path(wp_value)
         step_num += 1
 
+        # --- Action Step Control hook (stub for now) ---
+        extra_sheets = run_action_step_control_hook(
+            df=df,
+            wp_value=cleaned_folder_name,
+            source_file=file_path,
+            enable_action_step_control=enable_action_step_control,
+        )
+
         # ========== STEP 8: Write Excel ==========
         print(f"   Writing to: {output_file}")
-        write_output_excel(df, output_file)
+        write_output_excel(df, output_file, extra_sheets=extra_sheets)
 
         # ========== STEP 9: Logbook ==========
         processing_time = (datetime.now() - start_time).total_seconds()

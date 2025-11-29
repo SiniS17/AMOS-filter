@@ -7,3 +7,4 @@ doc_validator/link.txt
 /dist
 /doc_validator/core/__pycache__
 *.pyc
+/Outsorce

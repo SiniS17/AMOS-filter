@@ -76,9 +76,9 @@ def create_log_file(wp_value, output_file, counts, processing_time=None):
         log_file.write(f"✗ Missing revision: {counts.get('Missing revision', 0)}\n")
 
         total_errors = (
-            counts.get("Missing reference", 0)
-            + counts.get("Missing reference type", 0)
-            + counts.get("Missing revision", 0)
+                counts.get("Missing reference", 0)
+                + counts.get("Missing reference type", 0)
+                + counts.get("Missing revision", 0)
         )
 
         log_file.write("\n")
@@ -217,22 +217,48 @@ def build_output_path(wp_value: str) -> tuple[str, str]:
     return cleaned_folder_name, output_file
 
 
-def write_output_excel(df: pd.DataFrame, output_file: str) -> None:
+def write_output_excel(
+    df: pd.DataFrame,
+    output_file: str,
+    extra_sheets: dict[str, pd.DataFrame] | None = None,
+) -> None:
     """
     Write the processed DataFrame to Excel.
 
-    - No extra rows are added.
-    - Auto-filter is applied over the actual data range only.
+    - Main sheet: the validation output (unchanged behavior).
+    - Optional extra_sheets: append additional sheets
+      e.g. {"ActionStepControl": asc_df}.
     """
     with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+        # --- main sheet ---
         df.to_excel(writer, index=False, header=True)
 
         workbook = writer.book
-        sheet = workbook.active
+        main_sheet = workbook.active
 
-        # Apply auto filter to the data range
-        last_row = sheet.max_row
-        last_col_letter = sheet.cell(row=1, column=sheet.max_column).column_letter
-        sheet.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
+        # Auto filter on main sheet
+        last_row = main_sheet.max_row
+        last_col_letter = main_sheet.cell(
+            row=1,
+            column=main_sheet.max_column,
+        ).column_letter
+        main_sheet.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
+
+        # --- optional extra sheets ---
+        if extra_sheets:
+            for sheet_name, extra_df in extra_sheets.items():
+                extra_df.to_excel(
+                    writer,
+                    index=False,
+                    header=True,
+                    sheet_name=sheet_name,
+                )
+                sheet = workbook[sheet_name]
+                last_row = sheet.max_row
+                last_col_letter = sheet.cell(
+                    row=1,
+                    column=sheet.max_column,
+                ).column_letter
+                sheet.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
 
     print(f"   ✓ File saved: {os.path.basename(output_file)}")

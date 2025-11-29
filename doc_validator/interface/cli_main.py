@@ -30,9 +30,14 @@ def main(argv: List[str] | None = None) -> int:
         python -m doc_validator.interface.cli_main
         python run_cli.py
         python -m doc_validator.interface.cli_main path/to/credentials.txt
+        python -m doc_validator.interface.cli_main path/to/credentials.txt --no-asc
+        python -m doc_validator.interface.cli_main --no-asc
 
-    If a path is provided as the first argument, it will be used as the
-    credentials file (instead of the default LINK_FILE).
+    If a path is provided as the first argument (excluding --no-asc),
+    it will be used as the credentials file (instead of the default LINK_FILE).
+
+    The optional flag:
+        --no-asc   disables Action Step Control (ASC) sheet generation.
     """
     if argv is None:
         argv = sys.argv[1:]
@@ -41,12 +46,29 @@ def main(argv: List[str] | None = None) -> int:
     print("Documentation Validator - BATCH MODE")
     print("=" * 60 + "\n")
 
-    # Determine credentials file to use
+    # Defaults
+    enable_asc = True
+    credentials_path = LINK_FILE
+
+    # Very simple argument parsing:
+    #   []                         -> default LINK_FILE, ASC enabled
+    #   [creds]                    -> creds, ASC enabled
+    #   [--no-asc]                 -> default LINK_FILE, ASC disabled
+    #   [creds, --no-asc]          -> creds, ASC disabled
     if argv:
-        credentials_path = argv[0]
-        print(f"Using credentials file from CLI argument: {credentials_path}")
+        # Check for --no-asc as the last argument
+        if argv[-1] == "--no-asc":
+            enable_asc = False
+            argv = argv[:-1]
+
+        if argv:
+            # First remaining arg is the credentials path
+            credentials_path = argv[0]
+            print(f"Using credentials file from CLI argument: {credentials_path}")
+        else:
+            # No credentials path left after stripping --no-asc
+            print(f"Using default credentials file from config: {credentials_path}")
     else:
-        credentials_path = LINK_FILE
         print(f"Using default credentials file from config: {credentials_path}")
 
     try:
@@ -54,6 +76,7 @@ def main(argv: List[str] | None = None) -> int:
         results = process_from_credentials_file(
             credentials_path=credentials_path,
             logger=_cli_logger,
+            enable_action_step_control=enable_asc,
         )
 
     except Exception as e:  # pragma: no cover - runtime error path
@@ -95,3 +118,7 @@ def main(argv: List[str] | None = None) -> int:
 
     print("\n" + "=" * 60)
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

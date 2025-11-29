@@ -32,6 +32,7 @@ def process_work_package(
     *,
     filter_start_date: Optional[date] = None,
     filter_end_date: Optional[date] = None,
+    enable_action_step_control: bool = True,
     logger: Optional[Logger] = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -39,6 +40,8 @@ def process_work_package(
     - Authenticates to Google Drive
     - Downloads **all Excel files** in the given folder
     - Runs the Excel validation pipeline on each (with optional date filter)
+    - Optionally runs Action Step Control (ASC) and adds its sheet
+      to the output workbook.
     - Returns a list of results (one per file)
 
     Args:
@@ -46,6 +49,7 @@ def process_work_package(
         folder_id: Google Drive folder ID (GG_FOLDER_ID)
         filter_start_date: Optional start date for filtering
         filter_end_date: Optional end date for filtering
+        enable_action_step_control: If True, generate ASC sheet for each file
         logger: Optional logging function (e.g., for GUI). Defaults to print.
 
     Returns:
@@ -97,11 +101,12 @@ def process_work_package(
         log(f"[{idx}/{len(downloaded_files)}] Processing file: {src_name}")
         log(f"    Local path: {local_path}")
 
-        # Process with optional date filter
+        # Process with optional date filter + ASC flag
         output_file = process_excel(
             local_path,
             filter_start_date=filter_start_date,
             filter_end_date=filter_end_date,
+            enable_action_step_control=enable_action_step_control,
         )
 
         if output_file:
@@ -128,6 +133,7 @@ def process_from_credentials_file(
     *,
     filter_start_date: Optional[date] = None,
     filter_end_date: Optional[date] = None,
+    enable_action_step_control: bool = True,
     logger: Optional[Logger] = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -138,6 +144,7 @@ def process_from_credentials_file(
         credentials_path: Path to credentials file (default: 'link.txt')
         filter_start_date: Optional start date for filtering
         filter_end_date: Optional end date for filtering
+        enable_action_step_control: If True, generate ASC sheet for each file
         logger: Optional logger (for CLI/GUI)
 
     Returns:
@@ -159,5 +166,6 @@ def process_from_credentials_file(
         folder_id,
         filter_start_date=filter_start_date,
         filter_end_date=filter_end_date,
+        enable_action_step_control=enable_action_step_control,
         logger=logger,
     )

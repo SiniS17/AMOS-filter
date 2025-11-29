@@ -37,3 +37,9 @@ LOG_FOLDER = "log"
 # Other constants
 # ------------------------------------------------------------
 INVALID_CHARACTERS = r'[\\/*?:"<>|]'
+
+# ------------------------------------------------------------
+# Action Step Control settings
+# ------------------------------------------------------------
+ACTION_STEP_CONTROL_ENABLED_DEFAULT = True
+ACTION_STEP_SHEET_NAME = "ActionStepControl"

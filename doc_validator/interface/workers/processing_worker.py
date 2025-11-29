@@ -73,14 +73,17 @@ class ProcessingWorker(QThread):
             selected_files: List[FileInfo],
             filter_start_date: Optional[date] = None,
             filter_end_date: Optional[date] = None,
+            enable_action_step_control: bool = True,
             parent: Optional[QObject] = None,
     ):
+
         super().__init__(parent)
         self.api_key = api_key
         self.folder_id = folder_id
         self.selected_files = selected_files
         self.filter_start_date = filter_start_date
         self.filter_end_date = filter_end_date
+        self.enable_action_step_control = enable_action_step_control
 
         self._cancelled = False
         self._line_count = 0
@@ -234,6 +237,7 @@ class ProcessingWorker(QThread):
                     local_path,
                     filter_start_date=self.filter_start_date,
                     filter_end_date=self.filter_end_date,
+                    enable_action_step_control=self.enable_action_step_control,
                 )
 
                 if output_file:

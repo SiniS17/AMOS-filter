@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional, Tuple
 
-from PyQt6.QtCore import QDate, pyqtSignal
+from PyQt6.QtCore import QDate, pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QGroupBox,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QCheckBox,
+    QSizePolicy,
 )
 
 from doc_validator.interface.widgets.smart_date_edit import SmartDateLineEdit
@@ -32,6 +33,20 @@ class DateFilterPanel(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Date Filter (Optional)", parent)
 
+        self.setStyleSheet("""
+                    QGroupBox {
+                        border: none;          /* no rectangle around it */
+                        margin-top: 0px;
+                    }
+                    QGroupBox::title {
+                        subcontrol-origin: margin;
+                        left: 0px;
+                        padding: 0 0 4px 0;
+                        color: #2196F3;
+                        font-weight: bold;
+                    }
+                """)
+
         self._build_ui()
 
     # ------------------------------------------------------------------ #
@@ -40,11 +55,23 @@ class DateFilterPanel(QGroupBox):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
+        # tighter margins + spacing so the group feels smaller
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
 
-        # Top row: checkbox
+        # Top row: compact checkbox
+        top_row = QHBoxLayout()
+
         self.chk_enable = QCheckBox("Enable date filtering")
         self.chk_enable.setChecked(False)
-        layout.addWidget(self.chk_enable)
+        # only take the width it needs
+        self.chk_enable.setSizePolicy(
+            QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        )
+
+        top_row.addWidget(self.chk_enable, 0, Qt.AlignmentFlag.AlignLeft)
+        top_row.addStretch()
+        layout.addLayout(top_row)
 
         # Second row: From / To
         dates_row = QHBoxLayout()

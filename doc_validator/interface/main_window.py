@@ -4,14 +4,15 @@
 from __future__ import annotations
 
 import os
-import sys
-import subprocess
 import platform
-from typing import List, Optional
+import subprocess
+import sys
 from datetime import date, datetime
+from pathlib import Path
+from typing import List, Optional
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QTextCursor, QColor, QFont
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QTextCursor, QColor, QFont, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -26,13 +27,12 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QHeaderView,
     QLineEdit,
-    QComboBox,
     QFileDialog,
-    QGroupBox,
     QProgressBar,
+    QSplitter, QCheckBox,  # ⬅️ NEW
 )
 
-from doc_validator.config import LINK_FILE, INPUT_FOLDER
+from doc_validator.config import LINK_FILE
 from doc_validator.core.drive_io import read_credentials_file
 from doc_validator.core.input_source_manager import (
     FileInfo,
@@ -40,17 +40,17 @@ from doc_validator.core.input_source_manager import (
     get_drive_excel_files,
     get_default_input_folder,
 )
-
 from doc_validator.interface.panels.date_filter_panel import DateFilterPanel
-from doc_validator.interface.workers.processing_worker import ProcessingWorker
+from doc_validator.interface.panels.input_source_panel import InputSourcePanel
 from doc_validator.interface.styles.theme import get_dark_theme_stylesheet
+from doc_validator.interface.workers.processing_worker import ProcessingWorker
 
 
 class MainWindow(QMainWindow):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        self.setWindowTitle("AMOSFilter - Documentation Validator")
+        self.setWindowTitle("AMOS Documentation Validator")
         self.resize(1200, 800)
 
         # Apply dark theme
@@ -78,6 +78,12 @@ class MainWindow(QMainWindow):
         # Load files from default source
         self._load_files_from_current_source()
 
+    def _on_header_clicked(self, index: int) -> None:
+        """Handle clicks on table header sections."""
+        if index == 0:
+            # Click on the first header cell = refresh
+            self._load_files_from_current_source()
+
     # ---------------------- UI Setup ----------------------
 
     def _setup_ui(self) -> None:
@@ -85,150 +91,116 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(8)
         central.setLayout(main_layout)
 
         # ========== HEADER WITH LOGO ==========
         header_layout = QHBoxLayout()
 
-        logo_label = QLabel("✈️ AMOSFilter")
-        logo_label.setStyleSheet("""
+        # Compute path relative to main_window.py
+        project_root = Path(__file__).resolve().parent.parent
+        logo_path = project_root / "resources" / "icons" / "app_logo.png"
+
+        logo_box = QHBoxLayout()
+        logo_box.setSpacing(10)
+
+        # --- Logo image ---
+        logo_image = QLabel()
+        pix = QPixmap(str(logo_path))
+
+        # scale to nice height, keep sharp edges
+        pix = pix.scaledToHeight(32, Qt.TransformationMode.SmoothTransformation)
+        logo_image.setPixmap(pix)
+
+        # --- App title ---
+        logo_text = QLabel("AMOS Document Validators")
+        logo_text.setStyleSheet("""
             font-size: 24px;
             font-weight: bold;
             color: #2196F3;
-            padding: 10px;
         """)
-        header_layout.addWidget(logo_label)
+
+        logo_box.addWidget(logo_image)
+        logo_box.addWidget(logo_text)
+        logo_box.addStretch()
+
+        header_layout.addLayout(logo_box)
 
         header_layout.addStretch()
 
-        version_label = QLabel("v2.1")
+        version_label = QLabel("v2.5.17")
         version_label.setStyleSheet("color: #888; font-size: 11px;")
         header_layout.addWidget(version_label)
 
         main_layout.addLayout(header_layout)
 
-        # ========== INPUT SOURCE SELECTION ==========
-        source_group = QGroupBox("📂 Input Source")
-        source_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 2px solid #444;
-                border-radius: 8px;
-                margin-top: 12px;
-                padding: 15px;
-                background: #2a2a2a;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-                color: #2196F3;
-            }
-        """)
-        source_layout = QVBoxLayout()
-        source_group.setLayout(source_layout)
+        # ========== MAIN HORIZONTAL SPLITTER ==========
+        splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        splitter.setHandleWidth(4)
+        main_layout.addWidget(splitter, 1)  # stretch factor 1
 
-        # Source type selector
-        source_row = QHBoxLayout()
-        source_row.addWidget(QLabel("Load files from:"))
+        # ---------- LEFT COLUMN (Input Source + Date Filter) ----------
+        left_widget = QWidget()
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 8, 0)
+        left_layout.setSpacing(8)
+        left_widget.setLayout(left_layout)
 
-        self.combo_source = QComboBox()
-        self.combo_source.addItem("📁 Local Folder (INPUT)", "local")
-        self.combo_source.addItem("☁️  Google Drive", "drive")
+        # Input Source panel (new module)
+        self.input_panel = InputSourcePanel(self, default_path=self.current_local_path)
+        left_layout.addWidget(self.input_panel)
+
+        # expose inner widgets so existing methods keep working
+        self.combo_source = self.input_panel.combo_source
+        self.label_folder_path = self.input_panel.label_folder_path
+        self.btn_browse_folder = self.input_panel.btn_browse_folder
+        self.label_drive_info = self.input_panel.label_drive_info
+
         self.combo_source.currentIndexChanged.connect(self._on_source_changed)
-        self.combo_source.setStyleSheet("""
-            QComboBox {
-                padding: 5px 10px;
-                border: 2px solid #444;
-                border-radius: 5px;
-                background: #333;
-                min-width: 200px;
-            }
-            QComboBox:hover {
-                border-color: #2196F3;
-            }
-            QComboBox::drop-down {
-                border: none;
-                padding-right: 10px;
-            }
-        """)
-        source_row.addWidget(self.combo_source)
-        source_row.addStretch()
-
-        source_layout.addLayout(source_row)
-
-        # Local folder selection
-        folder_row = QHBoxLayout()
-        folder_row.addWidget(QLabel("Folder:"))
-
-        self.label_folder_path = QLabel(get_default_input_folder())
-        self.label_folder_path.setStyleSheet("""
-            color: #2196F3;
-            font-family: 'Consolas', 'Courier New', monospace;
-            padding: 5px;
-            background: #1a1a1a;
-            border-radius: 3px;
-        """)
-        folder_row.addWidget(self.label_folder_path, stretch=1)
-
-        self.btn_browse_folder = QPushButton("📁 Browse...")
         self.btn_browse_folder.clicked.connect(self._browse_local_folder)
-        folder_row.addWidget(self.btn_browse_folder)
 
-        source_layout.addLayout(folder_row)
-
-        # Drive info label
-        self.label_drive_info = QLabel("☁️  Using configured Google Drive folder")
-        self.label_drive_info.setStyleSheet("color: #4CAF50; font-style: italic;")
-        self.label_drive_info.hide()
-        source_layout.addWidget(self.label_drive_info)
-
-        main_layout.addWidget(source_group)
-
-        # ========== TOP TOOLBAR ==========
-        toolbar_layout = QHBoxLayout()
-
-        self.btn_refresh = QPushButton("🔄 Refresh")
-        self.btn_refresh.setToolTip("Refresh file list from current source")
-        self.btn_refresh.clicked.connect(self._load_files_from_current_source)
-
-        self.btn_open_folder = QPushButton("📁 Open Output")
-        self.btn_open_folder.setToolTip("Open the DATA folder")
-        self.btn_open_folder.clicked.connect(self._open_output_folder)
-
-        for btn in [self.btn_refresh, self.btn_open_folder]:
-            btn.setStyleSheet("""
-                QPushButton {
-                    padding: 8px 16px;
-                    border: 2px solid #444;
-                    border-radius: 5px;
-                    background: #333;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background: #2196F3;
-                    border-color: #2196F3;
-                }
-                QPushButton:pressed {
-                    background: #1976D2;
-                }
-            """)
-
-        toolbar_layout.addWidget(self.btn_refresh)
-        toolbar_layout.addWidget(self.btn_open_folder)
-        toolbar_layout.addStretch()
-
-        main_layout.addLayout(toolbar_layout)
-
-        # ========== DATE FILTER ==========
+        # Date filter panel under input source
         self.date_filter_panel = DateFilterPanel(self)
-        main_layout.addWidget(self.date_filter_panel)
+        left_layout.addWidget(self.date_filter_panel)
+        # ---------- Action Step Control toggle ----------
+        self.asc_checkbox = QCheckBox("Run Action Step Control (ASC)")
+        self.asc_checkbox.setChecked(True)  # default ON
+        self.asc_checkbox.setStyleSheet("color: #2196F3; font-weight: bold;")
+        left_layout.addWidget(self.asc_checkbox)
 
-        # ========== SEARCH BAR ==========
-        search_layout = QHBoxLayout()
-        search_label = QLabel("🔍")
-        search_label.setStyleSheet("font-size: 18px;")
-        search_layout.addWidget(search_label)
+        left_layout.addStretch()
+
+        splitter.addWidget(left_widget)
+
+        # ---------- RIGHT COLUMN (Toolbar + Files + Console) ----------
+        right_widget = QWidget()
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(8, 0, 0, 0)
+        right_layout.setSpacing(8)
+        right_widget.setLayout(right_layout)
+        splitter.addWidget(right_widget)
+
+        # initial sizes (approx.)
+        splitter.setSizes([350, 850])
+
+        # ========== SEARCH BAR + FILE SECTION ==========
+        header_row = QHBoxLayout()
+
+        file_section_label = QLabel("Input Files")
+        file_section_label.setStyleSheet("""
+            font-weight: bold;
+            font-size: 14px;
+            color: #2196F3;
+            margin-top: 4px;
+        """)
+        header_row.addWidget(file_section_label)
+
+        header_row.addStretch()
+
+        search_icon = QLabel("🔍")
+        search_icon.setStyleSheet("font-size: 16px; padding-right: 4px;")
+        header_row.addWidget(search_icon)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Type to filter files by name...")
@@ -236,31 +208,22 @@ class MainWindow(QMainWindow):
         self.search_bar.setClearButtonEnabled(True)
         self.search_bar.setStyleSheet("""
             QLineEdit {
-                padding: 8px 12px;
+                padding: 6px 10px;
                 border: 2px solid #444;
                 border-radius: 5px;
                 background: #2a2a2a;
                 font-size: 13px;
+                min-width: 220px;
             }
             QLineEdit:focus {
                 border-color: #2196F3;
             }
         """)
-        search_layout.addWidget(self.search_bar)
+        header_row.addWidget(self.search_bar)
 
-        main_layout.addLayout(search_layout)
+        right_layout.addLayout(header_row)
 
-        # ========== FILE LIST ==========
-        file_section_label = QLabel("📊 Excel Files")
-        file_section_label.setStyleSheet("""
-            font-weight: bold;
-            font-size: 14px;
-            color: #2196F3;
-            margin-top: 10px;
-        """)
-        main_layout.addWidget(file_section_label)
-
-        # Enhanced table with file details
+        # ========== FILE LIST TABLE ==========
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels([
@@ -269,20 +232,40 @@ class MainWindow(QMainWindow):
 
         # Column sizes
         header = self.table.horizontalHeader()
+
+        # Refresh column (0) – fixed size, square-ish
+        refresh_size = 32  # tweak 32–36 if you want bigger
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(0, 40)  # Checkbox
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name
+        header.resizeSection(0, refresh_size + 4)
+
+        # Other columns
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # File Name
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Source
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Size
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Modified
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Status
+
+        # Make header sections tight so the icon fills the cell
+        header.setMinimumHeight(refresh_size + 4)
+
+        # ---------- big refresh icon in first header cell ----------
+        refresh_item = QTableWidgetItem()
+        # path relative to this file: /resources/icons/refresh.png
+        project_root = Path(__file__).resolve().parent.parent
+        refresh_icon_path = project_root / "resources" / "icons" / "refresh.png"
+        refresh_item.setIcon(QIcon(str(refresh_icon_path)))
+        refresh_item.setText("")  # icon only
+        refresh_item.setSizeHint(QSize(refresh_size, refresh_size))  # fills ~100% of cell
+        self.table.setHorizontalHeaderItem(0, refresh_item)
+
+        # Click on header[0] = refresh
+        header.sectionClicked.connect(self._on_header_clicked)
 
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
 
-        # Modern table styling
         self.table.setStyleSheet("""
             QTableWidget {
                 gridline-color: #3a3a3a;
@@ -292,7 +275,7 @@ class MainWindow(QMainWindow):
                 border-radius: 5px;
             }
             QTableWidget::item {
-                padding: 8px;
+                padding: 6px;
                 border: none;
             }
             QTableWidget::item:selected {
@@ -307,8 +290,8 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
             }
             QTableWidget::indicator {
-                width: 24px;
-                height: 24px;
+                width: 20px;
+                height: 20px;
                 border-radius: 4px;
             }
             QTableWidget::indicator:unchecked {
@@ -329,7 +312,7 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        main_layout.addWidget(self.table)
+        right_layout.addWidget(self.table, 1)  # stretch to fill
 
         # ========== TABLE CONTROL BUTTONS ==========
         btn_layout = QHBoxLayout()
@@ -339,6 +322,10 @@ class MainWindow(QMainWindow):
 
         self.btn_deselect_all = QPushButton("✗ Deselect All")
         self.btn_deselect_all.clicked.connect(self._deselect_all)
+
+        btn_layout.addWidget(self.btn_select_all)
+        btn_layout.addWidget(self.btn_deselect_all)
+        btn_layout.addStretch()
 
         self.btn_run = QPushButton("▶ Run Processing")
         self.btn_run.clicked.connect(self._on_run_clicked)
@@ -365,18 +352,14 @@ class MainWindow(QMainWindow):
                 color: #888;
             }
         """)
-
-        btn_layout.addWidget(self.btn_select_all)
-        btn_layout.addWidget(self.btn_deselect_all)
-        btn_layout.addStretch()
         btn_layout.addWidget(self.btn_run)
 
-        main_layout.addLayout(btn_layout)
+        right_layout.addLayout(btn_layout)
 
         # ========== PROGRESS SECTION ==========
         self.progress_container = QWidget()
         progress_layout = QVBoxLayout()
-        progress_layout.setContentsMargins(0, 10, 0, 10)
+        progress_layout.setContentsMargins(0, 4, 0, 4)
         self.progress_container.setLayout(progress_layout)
 
         self.progress_label = QLabel("")
@@ -397,7 +380,7 @@ class MainWindow(QMainWindow):
                 border: 2px solid #444;
                 border-radius: 8px;
                 text-align: center;
-                height: 30px;
+                height: 24px;
                 background: #2a2a2a;
                 color: white;
                 font-weight: bold;
@@ -414,7 +397,7 @@ class MainWindow(QMainWindow):
         progress_layout.addWidget(self.progress_bar)
 
         self.progress_container.hide()
-        main_layout.addWidget(self.progress_container)
+        right_layout.addWidget(self.progress_container)
 
         # ========== CONSOLE OUTPUT ==========
         console_header = QHBoxLayout()
@@ -423,7 +406,7 @@ class MainWindow(QMainWindow):
             font-weight: bold;
             font-size: 13px;
             color: #2196F3;
-            margin-top: 8px;
+            margin-top: 4px;
         """)
 
         self.btn_toggle_console = QPushButton("▼ Collapse")
@@ -445,7 +428,7 @@ class MainWindow(QMainWindow):
         console_header.addStretch()
         console_header.addWidget(self.btn_toggle_console)
 
-        main_layout.addLayout(console_header)
+        right_layout.addLayout(console_header)
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
@@ -462,7 +445,7 @@ class MainWindow(QMainWindow):
             }
         """)
         self.log_text.setMaximumHeight(200)
-        main_layout.addWidget(self.log_text)
+        right_layout.addWidget(self.log_text)
 
     # ---------------------- Console Toggle ----------------------
 
@@ -692,7 +675,6 @@ class MainWindow(QMainWindow):
             return
 
         self.btn_run.setEnabled(False)
-        self.btn_refresh.setEnabled(False)
 
         filter_start: Optional[date] = None
         filter_end: Optional[date] = None
@@ -703,7 +685,6 @@ class MainWindow(QMainWindow):
             except ValueError:
                 QMessageBox.warning(self, "Invalid Date", "Please check date format")
                 self.btn_run.setEnabled(True)
-                self.btn_refresh.setEnabled(True)
                 return
 
             self._append_log(f"\n📅 Filter: {filter_start} to {filter_end}\n")
@@ -714,12 +695,15 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_label.setText("Starting...")
 
+        enable_asc = self.asc_checkbox.isChecked()
+
         self.worker = ProcessingWorker(
             api_key=self.api_key,
             folder_id=self.folder_id,
             selected_files=selected_files,
             filter_start_date=filter_start,
             filter_end_date=filter_end,
+            enable_action_step_control=enable_asc,
         )
 
         self.worker.log_message.connect(self._append_log)
