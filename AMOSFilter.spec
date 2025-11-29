@@ -1,15 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-
 block_cipher = None
 
+# Collect resources
+datas = [
+    ('bin', 'bin'),
+    ('doc_validator/resources', 'doc_validator/resources'),
+]
+
+# Hidden imports for packages that might not be detected
+hidden_imports = [
+    'googleapiclient.discovery',
+    'googleapiclient.http',
+    'pandas',
+    'openpyxl',
+    'PyQt6.QtCore',
+    'PyQt6.QtGui',
+    'PyQt6.QtWidgets',
+]
 
 a = Analysis(
     ['run_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('bin', 'bin')],
-    hiddenimports=[],
+    datas=datas,
+    hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -19,6 +34,7 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
@@ -31,13 +47,14 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,
+    console=True,  # Change to False once it works
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
 )
+
 coll = COLLECT(
     exe,
     a.binaries,
@@ -46,5 +63,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='AMOSFilter',
+    name='EXE',  # ← Changed from 'AMOSFilter' to 'EXE'
 )

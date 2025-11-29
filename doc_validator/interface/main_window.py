@@ -130,7 +130,7 @@ class MainWindow(QMainWindow):
 
         header_layout.addStretch()
 
-        version_label = QLabel("v2.5.20")
+        version_label = QLabel("v2.5.22")
         version_label.setStyleSheet("color: #888; font-size: 11px;")
         header_layout.addWidget(version_label)
 
@@ -152,6 +152,7 @@ class MainWindow(QMainWindow):
         self.input_panel = InputSourcePanel(self, default_path=self.current_local_path)
         left_layout.addWidget(self.input_panel)
 
+        self.input_panel.open_output_clicked.connect(self._open_output_folder)
         # expose inner widgets so existing methods keep working
         self.combo_source = self.input_panel.combo_source
         self.label_folder_path = self.input_panel.label_folder_path

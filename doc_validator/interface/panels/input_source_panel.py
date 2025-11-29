@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -20,6 +20,7 @@ class InputSourcePanel(QGroupBox):
     Left-side input source panel (source selector + actions).
     MainWindow will connect signals and read public attributes directly.
     """
+    open_output_clicked = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None, default_path: str = "") -> None:
         super().__init__("📂 Input Source", parent)
@@ -91,6 +92,7 @@ class InputSourcePanel(QGroupBox):
         buttons_row.addWidget(self.btn_browse_folder)
 
         self.btn_open_output = QPushButton("📂 Open Output")
+        self.btn_open_output.clicked.connect(self.open_output_clicked.emit)
         buttons_row.addWidget(self.btn_open_output)
 
         buttons_row.addStretch()
