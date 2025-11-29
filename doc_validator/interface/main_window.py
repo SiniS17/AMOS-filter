@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
         # File source management
         self.all_files: List[FileInfo] = []
         self.filtered_files: List[FileInfo] = []
+        self._status_row_map: dict[str, list[int]] = {}
         self.current_source_type: str = "local"
         self.current_local_path: str = get_default_input_folder()
 
@@ -129,7 +130,7 @@ class MainWindow(QMainWindow):
 
         header_layout.addStretch()
 
-        version_label = QLabel("v2.5.17")
+        version_label = QLabel("v2.5.20")
         version_label.setStyleSheet("color: #888; font-size: 11px;")
         header_layout.addWidget(version_label)
 
@@ -664,15 +665,29 @@ class MainWindow(QMainWindow):
     # ---------------------- Run Processing ----------------------
 
     def _on_run_clicked(self) -> None:
+        # Map file name -> list of row indices that were selected
+        self._status_row_map = {}
+
         selected_files: List[FileInfo] = []
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
             if item and item.checkState() == Qt.CheckState.Checked:
+                file_info = self.filtered_files[row]
                 selected_files.append(self.filtered_files[row])
+                self._status_row_map.setdefault(file_info.name, []).append(row)
 
         if not selected_files:
             QMessageBox.warning(self, "No Selection", "Please select at least one file")
             return
+
+        # Clear status for the rows that are about to be processed
+        for rows in self._status_row_map.values():
+            for row in rows:
+                status_item = self.table.item(row, 5)
+                if status_item:
+                    status_item.setText("")
+                    # optional: neutral color
+                    # status_item.setForeground(QColor("#CCCCCC"))
 
         self.btn_run.setEnabled(False)
 
@@ -726,18 +741,26 @@ class MainWindow(QMainWindow):
         self.progress_container.hide()
         self.btn_run.setEnabled(True)
 
-        # Update status column
-        for i, result in enumerate(results):
-            if i < self.table.rowCount():
-                status_item = self.table.item(i, 5)
-                if status_item:
-                    if result.get("output_file"):
-                        status_item.setText("✓ Success")
-                        status_item.setForeground(QColor("#4CAF50"))
-                    else:
-                        status_item.setText("✗ Failed")
-                        status_item.setForeground(QColor("#F44336"))
+        # Update status column ONLY for the rows that were actually selected
+        for result in results:
+            name = result.get("source_name")
+            if not name:
+                continue
 
+            rows = self._status_row_map.get(name, [])
+            for row in rows:
+                status_item = self.table.item(row, 5)
+                if not status_item:
+                    continue
+
+                if result.get("output_file"):
+                    status_item.setText("✓ Success")
+                    status_item.setForeground(QColor("#4CAF50"))
+                else:
+                    status_item.setText("✗ Failed")
+                    status_item.setForeground(QColor("#F44336"))
+
+        # Summary, same as before
         success_count = sum(1 for r in results if r.get("output_file"))
         total = len(results)
         failed_count = total - success_count
