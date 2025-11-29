@@ -1,3 +1,6 @@
+# doc_validator/interface/main_window.py
+# PHASE 2 ENHANCED: File details, modern theme, enhanced styling
+
 from __future__ import annotations
 
 import os
@@ -5,10 +8,10 @@ import sys
 import subprocess
 import platform
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QTextCursor
+from PyQt6.QtGui import QTextCursor, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -26,6 +29,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QGroupBox,
+    QProgressBar,
 )
 
 from doc_validator.config import LINK_FILE, INPUT_FOLDER
@@ -39,6 +43,7 @@ from doc_validator.core.input_source_manager import (
 
 from doc_validator.interface.panels.date_filter_panel import DateFilterPanel
 from doc_validator.interface.workers.processing_worker import ProcessingWorker
+from doc_validator.interface.styles.theme import get_dark_theme_stylesheet
 
 
 class MainWindow(QMainWindow):
@@ -46,16 +51,19 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
 
         self.setWindowTitle("AMOSFilter - Documentation Validator")
-        self.resize(1000, 750)
+        self.resize(1200, 800)
+
+        # Apply dark theme
+        self.setStyleSheet(get_dark_theme_stylesheet())
 
         # Credentials / Drive folder info
         self.api_key: Optional[str] = None
         self.folder_id: Optional[str] = None
 
         # File source management
-        self.all_files: List[FileInfo] = []  # All loaded files
-        self.filtered_files: List[FileInfo] = []  # Files after search filter
-        self.current_source_type: str = "local"  # "local" or "drive"
+        self.all_files: List[FileInfo] = []
+        self.filtered_files: List[FileInfo] = []
+        self.current_source_type: str = "local"
         self.current_local_path: str = get_default_input_folder()
 
         # Worker thread reference
@@ -64,10 +72,10 @@ class MainWindow(QMainWindow):
         # Build UI
         self._setup_ui()
 
-        # Load credentials for Drive option
+        # Load credentials
         self._load_credentials()
 
-        # Load files from default source (INPUT folder)
+        # Load files from default source
         self._load_files_from_current_source()
 
     # ---------------------- UI Setup ----------------------
@@ -79,8 +87,44 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout()
         central.setLayout(main_layout)
 
+        # ========== HEADER WITH LOGO ==========
+        header_layout = QHBoxLayout()
+
+        logo_label = QLabel("✈️ AMOSFilter")
+        logo_label.setStyleSheet("""
+            font-size: 24px;
+            font-weight: bold;
+            color: #2196F3;
+            padding: 10px;
+        """)
+        header_layout.addWidget(logo_label)
+
+        header_layout.addStretch()
+
+        version_label = QLabel("v2.1")
+        version_label.setStyleSheet("color: #888; font-size: 11px;")
+        header_layout.addWidget(version_label)
+
+        main_layout.addLayout(header_layout)
+
         # ========== INPUT SOURCE SELECTION ==========
-        source_group = QGroupBox("Input Source")
+        source_group = QGroupBox("📂 Input Source")
+        source_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #444;
+                border-radius: 8px;
+                margin-top: 12px;
+                padding: 15px;
+                background: #2a2a2a;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                color: #2196F3;
+            }
+        """)
         source_layout = QVBoxLayout()
         source_group.setLayout(source_layout)
 
@@ -89,20 +133,42 @@ class MainWindow(QMainWindow):
         source_row.addWidget(QLabel("Load files from:"))
 
         self.combo_source = QComboBox()
-        self.combo_source.addItem("Local Folder (INPUT)", "local")
-        self.combo_source.addItem("Google Drive", "drive")
+        self.combo_source.addItem("📁 Local Folder (INPUT)", "local")
+        self.combo_source.addItem("☁️  Google Drive", "drive")
         self.combo_source.currentIndexChanged.connect(self._on_source_changed)
+        self.combo_source.setStyleSheet("""
+            QComboBox {
+                padding: 5px 10px;
+                border: 2px solid #444;
+                border-radius: 5px;
+                background: #333;
+                min-width: 200px;
+            }
+            QComboBox:hover {
+                border-color: #2196F3;
+            }
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 10px;
+            }
+        """)
         source_row.addWidget(self.combo_source)
         source_row.addStretch()
 
         source_layout.addLayout(source_row)
 
-        # Local folder selection row
+        # Local folder selection
         folder_row = QHBoxLayout()
         folder_row.addWidget(QLabel("Folder:"))
 
         self.label_folder_path = QLabel(get_default_input_folder())
-        self.label_folder_path.setStyleSheet("color: #2196F3; font-family: monospace;")
+        self.label_folder_path.setStyleSheet("""
+            color: #2196F3;
+            font-family: 'Consolas', 'Courier New', monospace;
+            padding: 5px;
+            background: #1a1a1a;
+            border-radius: 3px;
+        """)
         folder_row.addWidget(self.label_folder_path, stretch=1)
 
         self.btn_browse_folder = QPushButton("📁 Browse...")
@@ -111,8 +177,8 @@ class MainWindow(QMainWindow):
 
         source_layout.addLayout(folder_row)
 
-        # Drive info label (hidden by default)
-        self.label_drive_info = QLabel("Using configured Google Drive folder")
+        # Drive info label
+        self.label_drive_info = QLabel("☁️  Using configured Google Drive folder")
         self.label_drive_info.setStyleSheet("color: #4CAF50; font-style: italic;")
         self.label_drive_info.hide()
         source_layout.addWidget(self.label_drive_info)
@@ -126,9 +192,27 @@ class MainWindow(QMainWindow):
         self.btn_refresh.setToolTip("Refresh file list from current source")
         self.btn_refresh.clicked.connect(self._load_files_from_current_source)
 
-        self.btn_open_folder = QPushButton("📁 Open Output Folder")
-        self.btn_open_folder.setToolTip("Open the DATA folder (root output directory)")
+        self.btn_open_folder = QPushButton("📁 Open Output")
+        self.btn_open_folder.setToolTip("Open the DATA folder")
         self.btn_open_folder.clicked.connect(self._open_output_folder)
+
+        for btn in [self.btn_refresh, self.btn_open_folder]:
+            btn.setStyleSheet("""
+                QPushButton {
+                    padding: 8px 16px;
+                    border: 2px solid #444;
+                    border-radius: 5px;
+                    background: #333;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background: #2196F3;
+                    border-color: #2196F3;
+                }
+                QPushButton:pressed {
+                    background: #1976D2;
+                }
+            """)
 
         toolbar_layout.addWidget(self.btn_refresh)
         toolbar_layout.addWidget(self.btn_open_folder)
@@ -136,94 +220,151 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(toolbar_layout)
 
-        # ========== DATE FILTER SECTION ==========
+        # ========== DATE FILTER ==========
         self.date_filter_panel = DateFilterPanel(self)
         main_layout.addWidget(self.date_filter_panel)
 
         # ========== SEARCH BAR ==========
         search_layout = QHBoxLayout()
-        search_layout.addWidget(QLabel("🔍 Search:"))
+        search_label = QLabel("🔍")
+        search_label.setStyleSheet("font-size: 18px;")
+        search_layout.addWidget(search_label)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Type to filter files by name...")
         self.search_bar.textChanged.connect(self._on_search_changed)
         self.search_bar.setClearButtonEnabled(True)
+        self.search_bar.setStyleSheet("""
+            QLineEdit {
+                padding: 8px 12px;
+                border: 2px solid #444;
+                border-radius: 5px;
+                background: #2a2a2a;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #2196F3;
+            }
+        """)
         search_layout.addWidget(self.search_bar)
 
         main_layout.addLayout(search_layout)
 
-        # ========== FILE LIST SECTION ==========
-        file_section_label = QLabel("Excel files:")
-        file_section_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        # ========== FILE LIST ==========
+        file_section_label = QLabel("📊 Excel Files")
+        file_section_label.setStyleSheet("""
+            font-weight: bold;
+            font-size: 14px;
+            color: #2196F3;
+            margin-top: 10px;
+        """)
         main_layout.addWidget(file_section_label)
 
-        # Table of files
+        # Enhanced table with file details
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Process?", "File Name", "Source"])
-        self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
-        self.table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
-        )
-        self.table.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers
-        )
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels([
+            "", "File Name", "Source", "Size", "Modified", "Status"
+        ])
 
-        # Enhanced style with checkmark
+        # Column sizes
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(0, 40)  # Checkbox
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Source
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Size
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Modified
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Status
+
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+
+        # Modern table styling
         self.table.setStyleSheet("""
             QTableWidget {
-                gridline-color: #3b3b3b;
+                gridline-color: #3a3a3a;
+                background-color: #2a2a2a;
+                alternate-background-color: #252525;
+                border: 2px solid #444;
+                border-radius: 5px;
             }
             QTableWidget::item {
-                padding: 5px;
+                padding: 8px;
+                border: none;
+            }
+            QTableWidget::item:selected {
+                background-color: #1976D2;
+            }
+            QHeaderView::section {
+                background-color: #333;
+                color: #2196F3;
+                padding: 8px;
+                border: none;
+                border-right: 1px solid #444;
+                font-weight: bold;
             }
             QTableWidget::indicator {
-                width: 20px;
-                height: 20px;
-                border: 2px solid #666;
+                width: 24px;
+                height: 24px;
                 border-radius: 4px;
-                background-color: #2b2b2b;
             }
             QTableWidget::indicator:unchecked {
-                background-color: #2b2b2b;
+                background-color: #333;
                 border: 2px solid #666;
             }
             QTableWidget::indicator:unchecked:hover {
-                background-color: #3b3b3b;
-                border: 2px solid #999;
+                background-color: #3a3a3a;
+                border-color: #2196F3;
             }
             QTableWidget::indicator:checked {
                 background-color: #2196F3;
                 border: 2px solid #2196F3;
+                image: url(none);
             }
             QTableWidget::indicator:checked:hover {
                 background-color: #42A5F5;
-                border: 2px solid #42A5F5;
             }
         """)
 
         main_layout.addWidget(self.table)
 
-        # Buttons under table
+        # ========== TABLE CONTROL BUTTONS ==========
         btn_layout = QHBoxLayout()
-        self.btn_select_all = QPushButton("Select All")
+
+        self.btn_select_all = QPushButton("✓ Select All")
         self.btn_select_all.clicked.connect(self._select_all)
 
-        self.btn_deselect_all = QPushButton("Deselect All")
+        self.btn_deselect_all = QPushButton("✗ Deselect All")
         self.btn_deselect_all.clicked.connect(self._deselect_all)
 
-        self.btn_run = QPushButton("▶ Run")
-        self.btn_run.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self.btn_run = QPushButton("▶ Run Processing")
         self.btn_run.clicked.connect(self._on_run_clicked)
+        self.btn_run.setStyleSheet("""
+            QPushButton {
+                font-weight: bold;
+                font-size: 14px;
+                padding: 10px 30px;
+                background: #4CAF50;
+                border: 2px solid #4CAF50;
+                border-radius: 5px;
+                color: white;
+            }
+            QPushButton:hover {
+                background: #66BB6A;
+                border-color: #66BB6A;
+            }
+            QPushButton:pressed {
+                background: #388E3C;
+            }
+            QPushButton:disabled {
+                background: #555;
+                border-color: #555;
+                color: #888;
+            }
+        """)
 
         btn_layout.addWidget(self.btn_select_all)
         btn_layout.addWidget(self.btn_deselect_all)
@@ -233,16 +374,17 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(btn_layout)
 
         # ========== PROGRESS SECTION ==========
-        from PyQt6.QtWidgets import QProgressBar
-
-        # Progress container (hidden by default)
         self.progress_container = QWidget()
         progress_layout = QVBoxLayout()
-        progress_layout.setContentsMargins(0, 5, 0, 5)
+        progress_layout.setContentsMargins(0, 10, 0, 10)
         self.progress_container.setLayout(progress_layout)
 
         self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.progress_label.setStyleSheet("""
+            font-weight: bold;
+            color: #2196F3;
+            font-size: 13px;
+        """)
         progress_layout.addWidget(self.progress_label)
 
         self.progress_bar = QProgressBar()
@@ -252,29 +394,52 @@ class MainWindow(QMainWindow):
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 2px solid #ddd;
-                border-radius: 5px;
+                border: 2px solid #444;
+                border-radius: 8px;
                 text-align: center;
-                height: 25px;
+                height: 30px;
+                background: #2a2a2a;
+                color: white;
+                font-weight: bold;
             }
             QProgressBar::chunk {
-                background-color: #2196F3;
-                border-radius: 3px;
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2196F3,
+                    stop:1 #42A5F5
+                );
+                border-radius: 6px;
             }
         """)
         progress_layout.addWidget(self.progress_bar)
 
-        self.progress_container.hide()  # Hidden by default
+        self.progress_container.hide()
         main_layout.addWidget(self.progress_container)
 
         # ========== CONSOLE OUTPUT ==========
         console_header = QHBoxLayout()
-        console_label = QLabel("Console Output:")
-        console_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        console_label = QLabel("📝 Console Output")
+        console_label.setStyleSheet("""
+            font-weight: bold;
+            font-size: 13px;
+            color: #2196F3;
+            margin-top: 8px;
+        """)
 
         self.btn_toggle_console = QPushButton("▼ Collapse")
         self.btn_toggle_console.setMaximumWidth(100)
         self.btn_toggle_console.clicked.connect(self._toggle_console)
+        self.btn_toggle_console.setStyleSheet("""
+            QPushButton {
+                padding: 4px 8px;
+                border: 1px solid #444;
+                border-radius: 3px;
+                background: #333;
+            }
+            QPushButton:hover {
+                background: #444;
+            }
+        """)
 
         console_header.addWidget(console_label)
         console_header.addStretch()
@@ -282,20 +447,26 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(console_header)
 
-        # Console-style log output
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.log_text.setStyleSheet(
-            "font-family: Consolas, 'Courier New', monospace; font-size: 11px;"
-        )
+        self.log_text.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 11px;
+                background: #1a1a1a;
+                border: 2px solid #444;
+                border-radius: 5px;
+                padding: 8px;
+                color: #00FF00;
+            }
+        """)
         self.log_text.setMaximumHeight(200)
         main_layout.addWidget(self.log_text)
 
     # ---------------------- Console Toggle ----------------------
 
     def _toggle_console(self) -> None:
-        """Toggle console visibility."""
         if self.log_text.isVisible():
             self.log_text.hide()
             self.btn_toggle_console.setText("▲ Expand")
@@ -306,50 +477,49 @@ class MainWindow(QMainWindow):
     # ---------------------- Helpers ----------------------
 
     def _append_log(self, text: str) -> None:
-        """Append text to log window and scroll to bottom."""
         cursor = self.log_text.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_text.setTextCursor(cursor)
         self.log_text.insertPlainText(text)
         self.log_text.moveCursor(QTextCursor.MoveOperation.End)
 
-    # ---------------------- Credentials Loading ----------------------
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human-readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} TB"
+
+    # ---------------------- Credentials ----------------------
 
     def _load_credentials(self) -> None:
-        """Load Google Drive credentials for Drive option."""
         api_key, folder_id = read_credentials_file(LINK_FILE)
         if api_key and folder_id:
             self.api_key = api_key
             self.folder_id = folder_id
-            self._append_log(f"✓ Drive credentials loaded from {LINK_FILE}\n")
+            self._append_log(f"✓ Drive credentials loaded\n")
         else:
-            self._append_log(
-                f"⚠️  Drive credentials not found in {LINK_FILE}\n"
-                "   (Google Drive option will not work)\n"
-            )
+            self._append_log("⚠️  Drive credentials not found\n")
 
     # ---------------------- Source Management ----------------------
 
     def _on_source_changed(self, index: int) -> None:
-        """Handle source type change."""
         source_type = self.combo_source.currentData()
         self.current_source_type = source_type
 
-        # Show/hide appropriate controls
         if source_type == "local":
             self.label_folder_path.show()
             self.btn_browse_folder.show()
             self.label_drive_info.hide()
-        else:  # drive
+        else:
             self.label_folder_path.hide()
             self.btn_browse_folder.hide()
             self.label_drive_info.show()
 
-        # Reload files
         self._load_files_from_current_source()
 
     def _browse_local_folder(self) -> None:
-        """Let user select a different local folder."""
         folder = QFileDialog.getExistingDirectory(
             self,
             "Select Input Folder",
@@ -363,9 +533,8 @@ class MainWindow(QMainWindow):
             self._load_files_from_current_source()
 
     def _load_files_from_current_source(self) -> None:
-        """Load files based on currently selected source."""
         self.log_text.clear()
-        self.search_bar.clear()  # Clear search when reloading
+        self.search_bar.clear()
 
         if self.current_source_type == "local":
             self._load_local_files()
@@ -373,72 +542,47 @@ class MainWindow(QMainWindow):
             self._load_drive_files()
 
     def _load_local_files(self) -> None:
-        """Load files from local folder."""
-        self._append_log(f"📂 Loading files from: {self.current_local_path}\n")
-
+        self._append_log(f"📂 Loading: {self.current_local_path}\n")
         self.all_files = get_local_excel_files(self.current_local_path)
 
         if not self.all_files:
-            self._append_log(
-                "⚠️  No Excel files found in folder.\n"
-                f"   Place .xlsx or .xls files in: {self.current_local_path}\n"
-            )
+            self._append_log("⚠️  No Excel files found\n")
         else:
-            self._append_log(f"✓ Found {len(self.all_files)} Excel file(s)\n")
+            self._append_log(f"✓ Found {len(self.all_files)} file(s)\n")
 
         self.filtered_files = self.all_files.copy()
         self._populate_table()
 
     def _load_drive_files(self) -> None:
-        """Load files from Google Drive."""
         if not self.api_key or not self.folder_id:
-            self._append_log(
-                "❌ ERROR: Drive credentials not configured.\n"
-                f"   Please check: {LINK_FILE}\n"
-            )
-            QMessageBox.critical(
-                self,
-                "Credentials Error",
-                f"Could not read GG_API_KEY and GG_FOLDER_ID from:\n{LINK_FILE}",
-            )
-            self.btn_run.setEnabled(False)
+            self._append_log("❌ Drive credentials not configured\n")
+            QMessageBox.critical(self, "Error", "Drive credentials missing")
             return
 
         try:
-            self._append_log("🔐 Authenticating with Google Drive API...\n")
-            self._append_log("📂 Fetching Excel file list from Drive folder...\n")
-
+            self._append_log("🔐 Authenticating...\n")
             self.all_files = get_drive_excel_files(self.api_key, self.folder_id)
 
             if not self.all_files:
-                self._append_log("⚠️  No Excel files found in Drive folder.\n")
+                self._append_log("⚠️  No files found\n")
             else:
-                self._append_log(f"✓ Found {len(self.all_files)} Excel file(s)\n")
+                self._append_log(f"✓ Found {len(self.all_files)} file(s)\n")
 
             self.filtered_files = self.all_files.copy()
             self._populate_table()
 
         except Exception as e:
-            import traceback
-            self._append_log(f"\n✗ ERROR while loading Drive files: {e!r}\n")
-            self._append_log(traceback.format_exc())
-            QMessageBox.critical(
-                self,
-                "Drive Error",
-                f"Could not load files from Google Drive:\n{e}",
-            )
+            self._append_log(f"❌ Error: {e}\n")
+            QMessageBox.critical(self, "Error", str(e))
 
-    # ---------------------- Search Functionality ----------------------
+    # ---------------------- Search ----------------------
 
     def _on_search_changed(self, text: str) -> None:
-        """Filter files based on search text."""
         search_text = text.strip().lower()
 
         if not search_text:
-            # No search - show all files
             self.filtered_files = self.all_files.copy()
         else:
-            # Filter by filename
             self.filtered_files = [
                 f for f in self.all_files
                 if search_text in f.name.lower()
@@ -446,91 +590,97 @@ class MainWindow(QMainWindow):
 
         self._populate_table()
 
-        # Update log
-        if search_text:
-            self._append_log(
-                f"🔍 Search: '{text}' - "
-                f"showing {len(self.filtered_files)}/{len(self.all_files)} files\n"
-            )
-
     # ---------------------- Table Population ----------------------
 
     def _populate_table(self) -> None:
-        """Populate table with filtered files."""
         self.table.setRowCount(0)
 
         for row_idx, file_info in enumerate(self.filtered_files):
             self.table.insertRow(row_idx)
 
-            # Checkbox item
+            # Checkbox
             chk_item = QTableWidgetItem()
-            chk_item.setFlags(
-                Qt.ItemFlag.ItemIsUserCheckable
-                | Qt.ItemFlag.ItemIsEnabled
-            )
+            chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
             chk_item.setCheckState(Qt.CheckState.Unchecked)
-            chk_item.setText("")
             chk_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row_idx, 0, chk_item)
 
             # File name
             name_item = QTableWidgetItem(file_info.name)
+            name_item.setFont(QFont("Segoe UI", 10))
             self.table.setItem(row_idx, 1, name_item)
 
-            # Source indicator
-            source_text = "📁 Local" if file_info.source_type == "local" else "☁️ Drive"
+            # Source
+            source_text = "📁 Local" if file_info.source_type == "local" else "☁️  Drive"
             source_item = QTableWidgetItem(source_text)
             source_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row_idx, 2, source_item)
 
+            # File size
+            if file_info.local_path and os.path.exists(file_info.local_path):
+                size = os.path.getsize(file_info.local_path)
+                size_text = self._format_file_size(size)
+            else:
+                size_text = "—"
+            size_item = QTableWidgetItem(size_text)
+            size_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setItem(row_idx, 3, size_item)
+
+            # Modified date
+            if file_info.local_path and os.path.exists(file_info.local_path):
+                mtime = os.path.getmtime(file_info.local_path)
+                date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+            else:
+                date_str = "—"
+            date_item = QTableWidgetItem(date_str)
+            date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            date_item.setForeground(QColor("#888"))
+            self.table.setItem(row_idx, 4, date_item)
+
+            # Status (empty initially)
+            status_item = QTableWidgetItem("")
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table.setItem(row_idx, 5, status_item)
+
         self.table.resizeRowsToContents()
 
-    # ---------------------- Selection Helpers ----------------------
+    # ---------------------- Selection ----------------------
 
     def _select_all(self) -> None:
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
-            if item is not None:
+            if item:
                 item.setCheckState(Qt.CheckState.Checked)
 
     def _deselect_all(self) -> None:
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
-            if item is not None:
+            if item:
                 item.setCheckState(Qt.CheckState.Unchecked)
 
-    # ---------------------- Open Output Folder ----------------------
+    # ---------------------- Open Output ----------------------
 
     def _open_output_folder(self) -> None:
         from doc_validator.config import DATA_FOLDER
 
         if not os.path.isdir(DATA_FOLDER):
-            QMessageBox.warning(
-                self,
-                "No Output Folder",
-                f"DATA folder does not exist yet:\n{DATA_FOLDER}",
-            )
+            QMessageBox.warning(self, "Error", f"Folder not found:\n{DATA_FOLDER}")
             return
 
         try:
             system = platform.system()
             if system == "Windows":
                 os.startfile(DATA_FOLDER)
-            elif system == "Darwin":  # macOS
+            elif system == "Darwin":
                 subprocess.Popen(["open", DATA_FOLDER])
-            else:  # Linux
+            else:
                 subprocess.Popen(["xdg-open", DATA_FOLDER])
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error Opening Folder",
-                f"Could not open folder:\n{e}",
-            )
+            QMessageBox.critical(self, "Error", f"Could not open folder:\n{e}")
 
-    # ---------------------- Run Button / Worker ----------------------
+    # ---------------------- Run Processing ----------------------
 
     def _on_run_clicked(self) -> None:
-        # Get selected files
         selected_files: List[FileInfo] = []
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
@@ -538,18 +688,12 @@ class MainWindow(QMainWindow):
                 selected_files.append(self.filtered_files[row])
 
         if not selected_files:
-            QMessageBox.warning(
-                self,
-                "No Files Selected",
-                "Please select at least one file to process.",
-            )
+            QMessageBox.warning(self, "No Selection", "Please select at least one file")
             return
 
-        # Disable UI while processing
         self.btn_run.setEnabled(False)
         self.btn_refresh.setEnabled(False)
 
-        # Get date filter settings
         filter_start: Optional[date] = None
         filter_end: Optional[date] = None
 
@@ -557,37 +701,19 @@ class MainWindow(QMainWindow):
             try:
                 filter_start, filter_end = self.date_filter_panel.get_range()
             except ValueError:
-                QMessageBox.warning(
-                    self,
-                    "Invalid Date",
-                    (
-                        "Please enter dates as:\n"
-                        "  - YYYY-MM-DD (e.g. 2025-11-27)\n"
-                        "  - or relative: -1d, +2d, -1m, +1y"
-                    ),
-                )
+                QMessageBox.warning(self, "Invalid Date", "Please check date format")
                 self.btn_run.setEnabled(True)
                 self.btn_refresh.setEnabled(True)
                 return
 
-            self._append_log(
-                f"\n📅 Date filter enabled:\n"
-                f"   From: {filter_start}\n"
-                f"   To: {filter_end}\n"
-            )
+            self._append_log(f"\n📅 Filter: {filter_start} to {filter_end}\n")
 
-        self._append_log(
-            "\n" + "=" * 60 + "\n"
-                              "▶ Starting processing of selected files...\n"
-            + "=" * 60 + "\n"
-        )
+        self._append_log("\n" + "=" * 60 + "\n▶ Starting...\n" + "=" * 60 + "\n")
 
-        # Show progress bar
         self.progress_container.show()
         self.progress_bar.setValue(0)
         self.progress_label.setText("Starting...")
 
-        # Create and start worker thread
         self.worker = ProcessingWorker(
             api_key=self.api_key,
             folder_id=self.folder_id,
@@ -596,7 +722,6 @@ class MainWindow(QMainWindow):
             filter_end_date=filter_end,
         )
 
-        # Connect signals
         self.worker.log_message.connect(self._append_log)
         self.worker.progress_updated.connect(self._update_progress)
         self.worker.finished_with_results.connect(self._on_processing_finished)
@@ -605,25 +730,31 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def _on_worker_thread_finished(self) -> None:
-        """Called when worker thread finishes."""
         if self.worker:
             self.worker.deleteLater()
             self.worker = None
 
     def _update_progress(self, value: int, status: str) -> None:
-        """Update progress bar and label."""
         self.progress_bar.setValue(value)
         self.progress_label.setText(status)
 
     def _on_processing_finished(self, results: list) -> None:
-        # Hide progress bar
         self.progress_container.hide()
-
-        # Re-enable UI
         self.btn_run.setEnabled(True)
         self.btn_refresh.setEnabled(True)
 
-        # Summarize results
+        # Update status column
+        for i, result in enumerate(results):
+            if i < self.table.rowCount():
+                status_item = self.table.item(i, 5)
+                if status_item:
+                    if result.get("output_file"):
+                        status_item.setText("✓ Success")
+                        status_item.setForeground(QColor("#4CAF50"))
+                    else:
+                        status_item.setText("✗ Failed")
+                        status_item.setForeground(QColor("#F44336"))
+
         success_count = sum(1 for r in results if r.get("output_file"))
         total = len(results)
         failed_count = total - success_count
@@ -631,34 +762,22 @@ class MainWindow(QMainWindow):
         from doc_validator.config import DATA_FOLDER
 
         if success_count == total:
-            msg = f"✓ All {total} file(s) processed successfully!"
+            msg = f"✓ All {total} file(s) processed!"
         elif success_count > 0:
-            msg = (
-                f"⚠️ Processed {success_count}/{total} file(s) successfully.\n"
-                f"{failed_count} file(s) failed."
-            )
+            msg = f"⚠️ Processed {success_count}/{total} file(s)\n{failed_count} failed"
         else:
-            msg = f"❌ All {total} file(s) failed to process."
+            msg = f"❌ All {total} file(s) failed"
 
-        msg += f"\n\nOutput directory:\n{DATA_FOLDER}"
+        msg += f"\n\nOutput: {DATA_FOLDER}"
 
-        QMessageBox.information(
-            self,
-            "Processing Complete",
-            msg,
-        )
+        QMessageBox.information(self, "Complete", msg)
 
 
 def launch() -> None:
-    """Launch the PyQt6 GUI."""
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    app.setQuitOnLastWindowClosed(True)
-
     window = MainWindow()
     window.show()
-
-    app.main_window = window
 
     sys.exit(app.exec())
