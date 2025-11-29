@@ -30,6 +30,8 @@ class FileInfo:
 
 
 type_of_input_file = ["*.xlsx", "*.xls", "*.XLSX", "*.XLS"]
+
+
 def get_local_excel_files(folder_path: str) -> List[FileInfo]:
     """
     Get all Excel files from a local folder.
