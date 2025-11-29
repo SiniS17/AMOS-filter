@@ -4,7 +4,7 @@ This document consolidates all recommended improvements for the AMOSFilter PyQt6
 
 ---
 
-# 1. Functional Workflow Improvements
+# Phase 1. Functional Workflow Improvements
 
 ## 1.1 Add Progress Window / Progress Bar
 - Display a modal progress dialog when processing files.
@@ -35,7 +35,7 @@ This document consolidates all recommended improvements for the AMOSFilter PyQt6
 
 ---
 
-# 2. UI & Layout Enhancements
+# Phase 2. UI & Layout Enhancements
 
 ## 2.1 Collapsible Console Output
 - Convert the console output area into a collapsible panel.
@@ -45,33 +45,22 @@ This document consolidates all recommended improvements for the AMOSFilter PyQt6
 
 ## 2.2 Add File Details Columns
 Enhance the file table with more metadata:
-- Google Drive modified time
+- Google Drive/Local input modified time
 - File size
-- WP number (parsed)
-- Row count or sheet count (optional by pre-read)
+- Row count
 
-## 2.3 Search Bar for Filtering Files
-- Add a search bar above the table.
-- Filter rows by filename or extracted WP number.
-- Instant filtering as user types.
-
-## 2.4 Toggle-Style Checkboxes
+## 2.3 Toggle-Style Checkboxes
 - Replace classic checkboxes with modern toggle switches via stylesheets.
 - Alternatively, make entire rows selectable.
 
-## 2.5 Modernize Theme & Visual Style
+## 2.4 Modernize Theme & Visual Style
 - Apply a dark theme or custom stylesheet.
 - Use rounded corners, subtle shadows, and spacing.
-- Add icons for:
-  - Run
-  - Select All / Deselect All
-  - Refresh
-  - Open Folder
-  - Settings
+
 
 ---
 
-# 3. Quality-of-Life Features
+# Phase 3. Quality-of-Life Features
 
 ## 3.1 Settings Panel
 Add a dedicated settings window for:
@@ -92,7 +81,7 @@ Add a dedicated settings window for:
 
 ---
 
-# 4. Architecture & Code Improvements
+# Phase 4. Architecture & Code Improvements
 
 ## 4.1 Separate GUI and Worker Logic
 - Move long-running tasks into worker classes.
@@ -107,7 +96,7 @@ Add a dedicated settings window for:
 
 ---
 
-# 5. Potential Future Enhancements
+# Phase 5. Potential Future Enhancements
 
 ## 5.1 Drive File Browser
 - Allow opening nested Google Drive folders.
@@ -122,7 +111,7 @@ Add a dedicated settings window for:
 
 ---
 
-# 6. Priority Recommendations
+# Phase 6. Priority Recommendations
 To maximize impact quickly:
 
 1. **Threaded processing + progress bar**
