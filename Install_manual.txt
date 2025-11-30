@@ -1,4 +1,4 @@
-pyinstaller --name=AMOSFilter --windowed --onedir --add-data "bin;bin" --add-data "doc_validator/resources;doc_validator/resources" --hidden-import=googleapiclient.discovery --hidden-import=googleapiclient.http --hidden-import=pandas --hidden-import=openpyxl --hidden-import=PyQt6.QtCore --hidden-import=PyQt6.QtGui --hidden-import=PyQt6.QtWidgets --icon=doc_validator/resources/icons/app_logo.ico run_gui.py
+pyinstaller --clean --distpath=EXE --name="AMOS Validation" --console --onedir --add-data "bin;bin" --add-data "doc_validator/resources;doc_validator/resources" --collect-all PyQt6 --collect-all google-api-python-client --collect-all pandas --collect-all openpyxl run_gui.py
 
 pyinstaller ^
   --windowed ^
@@ -8,4 +8,4 @@ pyinstaller ^
   --distpath "EXE" ^
   run_gui.py
 
-pyinstaller AMOSFilter.spec
+pyinstaller AMOSFilter.spec --distpath EXE

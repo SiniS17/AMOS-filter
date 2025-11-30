@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 
 block_cipher = None
 
@@ -42,17 +43,18 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='AMOSFilter',
+    name='AMOS Validation',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,  # Change to False once it works
+    console=True,  # Change to False once working
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='doc_validator/resources/icons/app_logo.ico',  # Make sure this .ico file exists!
 )
 
 coll = COLLECT(
@@ -63,5 +65,8 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='EXE',  # ← Changed from 'AMOSFilter' to 'EXE'
+    name='AMOS Validation',
 )
+
+# Override DISTPATH to output to EXE folder
+DISTPATH = 'EXE'
