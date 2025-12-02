@@ -218,23 +218,41 @@ def build_output_path(wp_value: str) -> tuple[str, str]:
 
 
 def write_output_excel(
-    df: pd.DataFrame,
-    output_file: str,
-    extra_sheets: dict[str, pd.DataFrame] | None = None,
+        df: pd.DataFrame,
+        output_file: str,
+        extra_sheets: dict[str, pd.DataFrame] | None = None,
 ) -> None:
     """
     Write the processed DataFrame to Excel.
 
-    - Main sheet: the validation output (unchanged behavior).
+    - Main sheet: renamed to "REF/REV" with filtered columns
     - Optional extra_sheets: append additional sheets
       e.g. {"ActionStepControl": asc_df}.
     """
+    # Define the columns we want to keep in the output (in order)
+    output_columns = [
+        "WO",
+        "WO_state",
+        "SEQ",
+        "Workstep",
+        "DES",
+        "wo_text_action.header",
+        "wo_text_action.text",
+        "action_date",
+        "wo_text_action.sign_performed",
+        "Reason"  # The newly added validation column
+    ]
+
+    # Filter DataFrame to only include these columns (if they exist)
+    available_columns = [col for col in output_columns if col in df.columns]
+    df_filtered = df[available_columns].copy()
+
     with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-        # --- main sheet ---
-        df.to_excel(writer, index=False, header=True)
+        # --- main sheet renamed to "REF/REV" ---
+        df_filtered.to_excel(writer, index=False, header=True, sheet_name="REF REV")
 
         workbook = writer.book
-        main_sheet = workbook.active
+        main_sheet = workbook["REF REV"]
 
         # Auto filter on main sheet
         last_row = main_sheet.max_row

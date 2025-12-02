@@ -130,7 +130,7 @@ class MainWindow(QMainWindow):
 
         header_layout.addStretch()
 
-        version_label = QLabel("v2.5.22")
+        version_label = QLabel("BETA v1.25")
         version_label.setStyleSheet("color: #888; font-size: 11px;")
         header_layout.addWidget(version_label)
 

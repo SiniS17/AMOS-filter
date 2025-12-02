@@ -211,3 +211,31 @@ def has_revision(text: str) -> bool:
         return True
 
     return False
+
+# Add this new function to doc_validator/validation/helpers.py
+
+def is_seq_9x(seq_value):
+    """
+    Check if SEQ is 9.x (9.1, 9.2, etc.)
+    For these SEQ values, we ignore DES when checking for missing references.
+
+    Args:
+        seq_value: The SEQ field value (can be string, float, or int)
+
+    Returns:
+        bool: True if SEQ matches 9.x pattern
+    """
+    if seq_value is None:
+        return False
+
+    # Convert to string and strip whitespace
+    seq_str = str(seq_value).strip()
+
+    if not seq_str:
+        return False
+
+    # Check for pattern: 9.x (9.1, 9.2, 9.10, etc.)
+    if seq_str.startswith("9."):
+        return True
+
+    return False

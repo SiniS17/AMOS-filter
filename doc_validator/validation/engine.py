@@ -13,6 +13,7 @@ from .helpers import (
     has_referenced_pattern,
     has_iaw_keyword,
     is_seq_auto_valid,
+    is_seq_9x,
 )
 from .patterns import DOC_ID_PATTERN
 
@@ -58,7 +59,6 @@ def _des_has_any_reference(des_text):
 
 
 def check_ref_keywords(text, seq_value=None, header_text=None, des_text=None):
-
     """
     Validation function - returns 4 states now:
     - "Valid"
@@ -71,6 +71,8 @@ def check_ref_keywords(text, seq_value=None, header_text=None, des_text=None):
     2) "Missing reference" is only enforced if the header itself has a reference.
        If wo_text_action.header has NO reference at all, rows that would be
        "Missing reference" are treated as "Valid".
+    3) At SEQ 9.x (9.1, 9.2, etc.), we don't check DES for ref context.
+       If a row is deemed "Missing reference", we keep it that way regardless of DES.
 
     LOGIC FLOW:
     0. SEQ auto-valid -> "Valid"
@@ -85,7 +87,8 @@ def check_ref_keywords(text, seq_value=None, header_text=None, des_text=None):
        - SB full number + IAW/REF/PER -> "Valid"
     6. Check for primary reference
        - If NO primary reference:
-           * If header_has_any_reference(header_text) -> "Missing reference"
+           * If SEQ is 9.x -> "Missing reference" (ignore DES)
+           * Else if header_has_any_reference(header_text) -> "Missing reference"
            * Else -> "Valid"
        - If HAS primary reference:
            * If no revision -> "Missing revision"
@@ -109,7 +112,6 @@ def check_ref_keywords(text, seq_value=None, header_text=None, des_text=None):
     stripped = str(text).strip()
     upper = stripped.upper()
     if upper in ["N/A", "NA", "NONE", ""]:
-        # Preserve original casing except normalize None -> "N/A" already handled
         return stripped
 
     # ========== STEP 3: Skip phrases ==========
@@ -141,16 +143,23 @@ def check_ref_keywords(text, seq_value=None, header_text=None, des_text=None):
     # ========== STEP 6: Check for PRIMARY reference ==========
     primary = has_primary_reference(cleaned)
 
+    # Check if this is SEQ 9.x
+    is_seq_9 = is_seq_9x(seq_value)
+
     # Decide if we should enforce "Missing reference" based on DES context
-    enforce_reference = _des_has_any_reference(des_text)
+    # BUT: For SEQ 9.x, we always enforce if missing reference (ignore DES)
+    if is_seq_9:
+        enforce_reference = True  # Always enforce for SEQ 9.x
+    else:
+        enforce_reference = _des_has_any_reference(des_text)
 
     if not primary:
         # No AMM/SRM/etc. in this row.
         if enforce_reference:
-            # DES has some reference => this row is expected to carry one too
+            # Either SEQ 9.x OR DES has some reference => enforce
             return "Missing reference"
         else:
-            # DES has no reference at all => allow row without reference
+            # Not SEQ 9.x AND DES has no reference => allow without reference
             return "Valid"
 
     # At this point we DO have a primary reference in the text row.
@@ -166,4 +175,3 @@ def check_ref_keywords(text, seq_value=None, header_text=None, des_text=None):
 
     # ========== STEP 8: Has reference but missing revision ==========
     return "Missing revision"
-

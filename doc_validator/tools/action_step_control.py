@@ -6,20 +6,21 @@ from datetime import datetime
 
 import pandas as pd
 
+
 def compute_action_step_control_df(
-    df: pd.DataFrame,
-    wp_col_candidates=None,
-    wo_col_candidates=None,
-    workstep_col_candidates=None,
-    date_col_candidates=None,
-    time_col_candidates=None,
-    text_col_candidates=None,
+        df: pd.DataFrame,
+        wp_col_candidates=None,
+        wo_col_candidates=None,
+        workstep_col_candidates=None,
+        date_col_candidates=None,
+        time_col_candidates=None,
+        text_col_candidates=None,
 ):
     """
     Core logic for Action Step Control operating on a DataFrame.
 
     Returns:
-        asc_df: DataFrame with ActionStepOrderOK + ActionStepIssue columns
+        asc_df: DataFrame with ActionStepOrderOK + ActionStepIssue columns (filtered to specific columns)
         summary_df: per-WO summary
         wp_value: detected WP (str)
     """
@@ -168,8 +169,8 @@ def compute_action_step_control_df(
                 out_df.at[idx, 'ActionStepOrderOK'] = False
                 prev_issue = out_df.at[idx, 'ActionStepIssue']
                 out_df.at[idx, 'ActionStepIssue'] = (
-                    (prev_issue + '; ') if prev_issue else ''
-                ) + 'Missing timestamp'
+                                                        (prev_issue + '; ') if prev_issue else ''
+                                                    ) + 'Missing timestamp'
                 violations += 1
             else:
                 offending = []
@@ -187,7 +188,7 @@ def compute_action_step_control_df(
                     offending_readable = [str(v) for v in offending_unique]
                     out_df.at[idx, 'ActionStepOrderOK'] = False
                     out_df.at[idx, 'ActionStepIssue'] = (
-                        "Earlier than steps " + ", ".join(offending_readable)
+                            "Earlier than steps " + ", ".join(offending_readable)
                     )
                     violations += 1
 
@@ -217,18 +218,39 @@ def compute_action_step_control_df(
         if internal_col in write_df.columns:
             write_df.drop(columns=[internal_col], inplace=True)
 
-    return write_df, summary_df, str(wp_value)
+    # 10) Filter to specific output columns for ActionStepControl sheet
+    # Define the columns we want (same as REF/REV but with action_date and ASC result columns)
+    asc_output_columns = [
+        wo_col,  # WO (discovered column name)
+        'WO_state',
+        'SEQ',
+        workstep_col,  # Workstep (discovered column name)
+        'DES',
+        'wo_text_action.header',
+        'wo_text_action.text',
+        date_col,  # action_date (discovered column name)
+        time_col,  # action_time (discovered column name)
+        'wo_text_action.sign_performed',
+        'ActionStepOrderOK',
+        'ActionStepIssue'
+    ]
+
+    # Filter to only available columns
+    available_asc_columns = [col for col in asc_output_columns if col in write_df.columns]
+    write_df_filtered = write_df[available_asc_columns].copy()
+
+    return write_df_filtered, summary_df, str(wp_value)
 
 
 def process_action_steps(
-    file_path: str,
-    wp_col_candidates=None,
-    wo_col_candidates=None,
-    workstep_col_candidates=None,
-    date_col_candidates=None,
-    time_col_candidates=None,
-    text_col_candidates=None,
-    output_base_dir: str = None,
+        file_path: str,
+        wp_col_candidates=None,
+        wo_col_candidates=None,
+        workstep_col_candidates=None,
+        date_col_candidates=None,
+        time_col_candidates=None,
+        text_col_candidates=None,
+        output_base_dir: str = None,
 ) -> str:
     """
     File-based wrapper for Action Step Control.
@@ -273,19 +295,13 @@ def process_action_steps(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = result_folder / f"{sanitized_wp}_action_step_control_{timestamp}.xlsx"
 
-    # preserve raw column order and append result cols (same as your code)
-    result_cols = ['ActionStepOrderOK', 'ActionStepIssue']
-    raw_columns = [
-        col for col in asc_df.columns if col not in result_cols
-    ]
-    write_columns = raw_columns + result_cols
-
+    # The columns are already filtered in compute_action_step_control_df
+    # so we can just write asc_df directly
     with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
         asc_df.to_excel(
             writer,
             sheet_name='Results',
             index=False,
-            columns=write_columns,
         )
 
         workbook = writer.book
