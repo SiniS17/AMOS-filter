@@ -110,6 +110,12 @@ def check_ref_keywords(text, seq_value=None, header_text=None, des_text=None):
         return "N/A"
 
     stripped = str(text).strip()
+
+    # NEW: If first 5 characters contain "N/A", treat as N/A
+    prefix = stripped[:5].upper()
+    if "N/A" in prefix:
+        return "N/A"
+
     upper = stripped.upper()
     if upper in ["N/A", "NA", "NONE", ""]:
         return stripped
