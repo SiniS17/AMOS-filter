@@ -116,13 +116,46 @@ def fix_common_typos(text: str) -> str:
     t = re.sub(r"\s{2,}", " ", t)
     return t
 
-
 def contains_skip_phrase(text: str) -> bool:
-    """Check if text contains phrases that should skip validation."""
+    """Check if text contains phrases that should skip validation (WT/WO cross-reference, etc)."""
     if not isinstance(text, str):
         return False
+
     up = text.upper()
-    return any(phrase in up for phrase in SKIP_PHRASES)
+
+    # 1) Existing skip phrases (your original logic)
+    for phrase in SKIP_PHRASES:
+        if phrase in up:
+            return True
+
+    # -------------------------------------------------
+    # 2) NEW: Cross-Workstep (WT) references
+    # Examples:
+    #   REFER RESULT WT 17
+    #   REFER WT 3
+    # -------------------------------------------------
+    if "REFER RESULT WT" in up or "REFER WT " in up:
+        return True
+
+    # -------------------------------------------------
+    # 3) NEW: Cross-Workorder (WO) references
+    # Examples:
+    #    REFER ( WO : 7`646`970 )
+    #    WO: 8123456
+    # -------------------------------------------------
+    if re.search(r"\bWO\s*[:\-]\s*[0-9`' ]+", up):
+        return True
+
+    # -------------------------------------------------
+    # 4) NEW: WO together with EOD (Engineering Order)
+    # Example:
+    #   PERFORMED REFER ( WO : 7`646`970 )  EOD-787-57-00-0002-R00
+    # -------------------------------------------------
+    if "EOD" in up and re.search(r"\bWO\s*[:\-]\s*[0-9`' ]+", up):
+        return True
+
+    return False
+
 
 
 def has_referenced_pattern(text: str) -> bool:

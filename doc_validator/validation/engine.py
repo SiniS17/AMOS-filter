@@ -1,5 +1,3 @@
-# doc_validator/validation/engine.py
-
 from .helpers import (
     fix_common_typos,
     has_revision,

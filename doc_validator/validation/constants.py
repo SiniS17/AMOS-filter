@@ -18,7 +18,7 @@ REF_KEYWORDS = [
     "AMM", "DMC", "SRM", "CMM", "EMM", "SOPM", "SWPM",
     "IPD", "FIM", "TSM", "IPC", "SB", "AD",
     "NTO", "MEL", "NEF", "MME", "LMM", "NTM", "DWG", "AIPC", "AMMS",
-    "DDG", "VSB", "BSI", "FIM", "FTD", "TIPF", "MNT", "EEL VNA", "EO EOD"  # NEW: Additional document types
+    "DDG", "VSB", "BSI", "FIM", "FTD", "TIPF", "MNT", "EEL VNA", "EO EOD", "NDT Manual"  # NEW: Additional document types
 ]
 
 # Keywords for linking words (IAW, REF, PER)
@@ -38,8 +38,8 @@ SKIP_PHRASES = [
 # These are procedural/setup tasks that don't require documentation references
 HEADER_SKIP_KEYWORDS = [
     "CLOSE UP", "CLOSEUP",
-    "JOB SET UP", "JOB SETUP", "JOBSETUP", "CLOSE-UP",
-    "OPEN ACCESS", "OPENACCESS",
+    "JOB SET UP", "JOB SETUP", "JOBSETUP", "CLOSE-UP", "CLOSE-UP:", "JOP SET-UP",
+    "OPEN ACCESS", "OPENACCESS", "JOB SET-UP 1 - GENERAL",
     "CLOSE ACCESS", "CLOSEACCESS",
     "GENERAL", "JOB SET-UP", "JOB CLOSE-UP"
 ]
