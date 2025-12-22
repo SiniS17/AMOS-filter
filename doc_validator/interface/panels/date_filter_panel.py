@@ -1,3 +1,5 @@
+# doc_validator/interface/panels/date_filter_panel.py (UPDATED)
+
 from __future__ import annotations
 
 from datetime import date
@@ -11,14 +13,16 @@ from PyQt6.QtWidgets import (
     QLabel,
     QCheckBox,
     QSizePolicy,
+    QWidget,
 )
 
 from doc_validator.interface.widgets.smart_date_edit import SmartDateLineEdit
 
 
-class DateFilterPanel(QGroupBox):
+class DateFilterPanel(QWidget):
     """
-    Reusable 'Date Filter (Optional)' groupbox.
+    Reusable 'Date Filter (Optional)' component.
+    Supports both vertical (sidebar) and horizontal (inline) layouts.
 
     Features:
       - Checkbox: Enable date filtering
@@ -30,23 +34,14 @@ class DateFilterPanel(QGroupBox):
 
     filter_toggled = pyqtSignal(bool)
 
-    def __init__(self, parent=None):
-        super().__init__("Date Filter (Optional)", parent)
-
-        self.setStyleSheet("""
-                    QGroupBox {
-                        border: none;          /* no rectangle around it */
-                        margin-top: 0px;
-                    }
-                    QGroupBox::title {
-                        subcontrol-origin: margin;
-                        left: 0px;
-                        padding: 0 0 4px 0;
-                        color: #2196F3;
-                        font-weight: bold;
-                    }
-                """)
-
+    def __init__(self, parent=None, compact_mode: bool = False):
+        """
+        Args:
+            parent: Parent widget
+            compact_mode: If True, use horizontal layout for inline display
+        """
+        super().__init__(parent)
+        self.compact_mode = compact_mode
         self._build_ui()
 
     # ------------------------------------------------------------------ #
@@ -54,26 +49,62 @@ class DateFilterPanel(QGroupBox):
     # ------------------------------------------------------------------ #
 
     def _build_ui(self) -> None:
+        if self.compact_mode:
+            self._build_compact_ui()
+        else:
+            self._build_full_ui()
+
+    def _build_compact_ui(self) -> None:
+        """Compact horizontal layout for inline display."""
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        # Checkbox
+        self.chk_enable = QCheckBox("📅 Date Filter:")
+        self.chk_enable.setChecked(False)
+        self.chk_enable.setStyleSheet("font-weight: bold; color: #2196F3;")
+        layout.addWidget(self.chk_enable)
+
+        # From
+        layout.addWidget(QLabel("From:"))
+        start_initial = QDate.currentDate().addMonths(-1)
+        self.date_start = SmartDateLineEdit(start_initial)
+        self.date_start.setEnabled(False)
+        self.date_start.setFixedWidth(120)
+        layout.addWidget(self.date_start)
+
+        # To
+        layout.addWidget(QLabel("To:"))
+        end_initial = QDate.currentDate()
+        self.date_end = SmartDateLineEdit(end_initial)
+        self.date_end.setEnabled(False)
+        self.date_end.setFixedWidth(120)
+        layout.addWidget(self.date_end)
+
+        # Connections
+        self.chk_enable.stateChanged.connect(self._on_toggle)
+
+    def _build_full_ui(self) -> None:
+        """Full vertical layout for sidebar display."""
         layout = QVBoxLayout(self)
-        # tighter margins + spacing so the group feels smaller
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(6)
 
-        # Top row: compact checkbox
-        top_row = QHBoxLayout()
+        # Title
+        title = QLabel("📅 Date Filter (Optional)")
+        title.setStyleSheet("color: #2196F3; font-weight: bold;")
+        layout.addWidget(title)
 
+        # Checkbox
         self.chk_enable = QCheckBox("Enable date filtering")
         self.chk_enable.setChecked(False)
-        # only take the width it needs
         self.chk_enable.setSizePolicy(
             QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         )
+        layout.addWidget(self.chk_enable)
 
-        top_row.addWidget(self.chk_enable, 0, Qt.AlignmentFlag.AlignLeft)
-        top_row.addStretch()
-        layout.addLayout(top_row)
-
-        # Second row: From / To
+        # From / To
         dates_row = QHBoxLayout()
 
         start_label = QLabel("From:")
@@ -95,8 +126,8 @@ class DateFilterPanel(QGroupBox):
 
         layout.addLayout(dates_row)
 
-        # Hint row
-        hint = QLabel("Filter rows by action_date. Format: YYYY-MM-DD or +/-Nd/M/Y")
+        # Hint
+        hint = QLabel("Format: YYYY-MM-DD or +/-Nd/M/Y")
         hint.setStyleSheet("color: gray; font-size: 10px;")
         layout.addWidget(hint)
 

@@ -1,5 +1,4 @@
-# doc_validator/interface/main_window.py
-# PHASE 2 ENHANCED: File details, modern theme, enhanced styling
+# doc_validator/interface/main_window.py (UPDATED)
 
 from __future__ import annotations
 
@@ -29,21 +28,22 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QFileDialog,
     QProgressBar,
-    QSplitter, QCheckBox,  # ⬅️ NEW
+    QSplitter,
 )
 
-from doc_validator.config import LINK_FILE
+from doc_validator.config import LINK_FILE, INPUT_FOLDER
 from doc_validator.core.drive_io import read_credentials_file
 from doc_validator.core.input_source_manager import (
     FileInfo,
     get_local_excel_files,
     get_drive_excel_files,
-    get_default_input_folder,
 )
 from doc_validator.interface.panels.date_filter_panel import DateFilterPanel
-from doc_validator.interface.panels.input_source_panel import InputSourcePanel
 from doc_validator.interface.styles.theme import get_dark_theme_stylesheet
 from doc_validator.interface.workers.processing_worker import ProcessingWorker
+from doc_validator.interface.settings_manager import SettingsManager
+from doc_validator.interface.settings_dialog import SettingsDialog
+from doc_validator.validation.helpers import set_seq_auto_valid_patterns
 
 
 class MainWindow(QMainWindow):
@@ -56,6 +56,13 @@ class MainWindow(QMainWindow):
         # Apply dark theme
         self.setStyleSheet(get_dark_theme_stylesheet())
 
+        # Initialize settings manager
+        self.settings = SettingsManager()
+
+        # Apply SEQ patterns from settings to validation engine
+        seq_patterns = self.settings.get("seq_auto_valid_patterns", ["1.", "2.", "3.", "10."])
+        set_seq_auto_valid_patterns(seq_patterns)
+
         # Credentials / Drive folder info
         self.api_key: Optional[str] = None
         self.folder_id: Optional[str] = None
@@ -64,8 +71,10 @@ class MainWindow(QMainWindow):
         self.all_files: List[FileInfo] = []
         self.filtered_files: List[FileInfo] = []
         self._status_row_map: dict[str, list[int]] = {}
-        self.current_source_type: str = "local"
-        self.current_local_path: str = get_default_input_folder()
+
+        # Load source settings
+        self.current_source_type: str = self.settings.get("input_source_type", "local")
+        self.current_local_path: str = self.settings.get("input_local_path", INPUT_FOLDER)
 
         # Worker thread reference
         self.worker: Optional[ProcessingWorker] = None
@@ -76,7 +85,7 @@ class MainWindow(QMainWindow):
         # Load credentials
         self._load_credentials()
 
-        # Load files from default source
+        # Load files from current source
         self._load_files_from_current_source()
 
     def _on_header_clicked(self, index: int) -> None:
@@ -96,8 +105,30 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(8)
         central.setLayout(main_layout)
 
-        # ========== HEADER WITH LOGO ==========
+        # ========== HEADER WITH LOGO AND SETTINGS ==========
         header_layout = QHBoxLayout()
+
+        # --- Settings button (gear icon) ---
+        self.btn_settings = QPushButton("⚙️")
+        self.btn_settings.setToolTip("Settings")
+        self.btn_settings.setFixedSize(36, 36)
+        self.btn_settings.clicked.connect(self._open_settings)
+        self.btn_settings.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                border: 2px solid #444;
+                border-radius: 18px;
+                font-size: 18px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #333;
+                border-color: #2196F3;
+            }
+        """)
+        header_layout.addWidget(self.btn_settings)
+
+        header_layout.addSpacing(15)
 
         # Compute path relative to main_window.py
         project_root = Path(__file__).resolve().parent.parent
@@ -109,8 +140,6 @@ class MainWindow(QMainWindow):
         # --- Logo image ---
         logo_image = QLabel()
         pix = QPixmap(str(logo_path))
-
-        # scale to nice height, keep sharp edges
         pix = pix.scaledToHeight(32, Qt.TransformationMode.SmoothTransformation)
         logo_image.setPixmap(pix)
 
@@ -127,82 +156,25 @@ class MainWindow(QMainWindow):
         logo_box.addStretch()
 
         header_layout.addLayout(logo_box)
-
         header_layout.addStretch()
 
-        version_label = QLabel("Last update: 20 DEC 25")
+        version_label = QLabel("Last update: 22 DEC 25")
         version_label.setStyleSheet("color: #888; font-size: 11px;")
         header_layout.addWidget(version_label)
 
         main_layout.addLayout(header_layout)
 
-        # ========== MAIN HORIZONTAL SPLITTER ==========
-        splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        splitter.setHandleWidth(4)
-        main_layout.addWidget(splitter, 1)  # stretch factor 1
+        # ========== MAIN HORIZONTAL SPLITTER (NO LEFT PANEL) ==========
+        # Search bar + date filter at the top, then table
 
-        # ---------- LEFT COLUMN (Input Source + Date Filter) ----------
-        left_widget = QWidget()
-        left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(0, 0, 8, 0)
-        left_layout.setSpacing(8)
-        left_widget.setLayout(left_layout)
+        # Search and filter row
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(10)
 
-        # Input Source panel (new module)
-        self.input_panel = InputSourcePanel(self, default_path=self.current_local_path)
-        left_layout.addWidget(self.input_panel)
-
-        self.input_panel.open_output_clicked.connect(self._open_output_folder)
-        # expose inner widgets so existing methods keep working
-        self.combo_source = self.input_panel.combo_source
-        self.label_folder_path = self.input_panel.label_folder_path
-        self.btn_browse_folder = self.input_panel.btn_browse_folder
-        self.label_drive_info = self.input_panel.label_drive_info
-
-        self.combo_source.currentIndexChanged.connect(self._on_source_changed)
-        self.btn_browse_folder.clicked.connect(self._browse_local_folder)
-
-        # Date filter panel under input source
-        self.date_filter_panel = DateFilterPanel(self)
-        left_layout.addWidget(self.date_filter_panel)
-        # ---------- Action Step Control toggle ----------
-        self.asc_checkbox = QCheckBox("Run Action Step Control (ASC)")
-        self.asc_checkbox.setChecked(True)  # default ON
-        self.asc_checkbox.setStyleSheet("color: #2196F3; font-weight: bold;")
-        left_layout.addWidget(self.asc_checkbox)
-
-        left_layout.addStretch()
-
-        splitter.addWidget(left_widget)
-
-        # ---------- RIGHT COLUMN (Toolbar + Files + Console) ----------
-        right_widget = QWidget()
-        right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(8, 0, 0, 0)
-        right_layout.setSpacing(8)
-        right_widget.setLayout(right_layout)
-        splitter.addWidget(right_widget)
-
-        # initial sizes (approx.)
-        splitter.setSizes([350, 850])
-
-        # ========== SEARCH BAR + FILE SECTION ==========
-        header_row = QHBoxLayout()
-
-        file_section_label = QLabel("Input Files")
-        file_section_label.setStyleSheet("""
-            font-weight: bold;
-            font-size: 14px;
-            color: #2196F3;
-            margin-top: 4px;
-        """)
-        header_row.addWidget(file_section_label)
-
-        header_row.addStretch()
-
+        # Search icon + search bar
         search_icon = QLabel("🔍")
         search_icon.setStyleSheet("font-size: 16px; padding-right: 4px;")
-        header_row.addWidget(search_icon)
+        filter_row.addWidget(search_icon)
 
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Type to filter files by name...")
@@ -215,15 +187,23 @@ class MainWindow(QMainWindow):
                 border-radius: 5px;
                 background: #2a2a2a;
                 font-size: 13px;
-                min-width: 220px;
+                min-width: 280px;
             }
             QLineEdit:focus {
                 border-color: #2196F3;
             }
         """)
-        header_row.addWidget(self.search_bar)
+        filter_row.addWidget(self.search_bar)
 
-        right_layout.addLayout(header_row)
+        filter_row.addSpacing(20)
+
+        # Date filter panel (compact, inline) - make it horizontal
+        self.date_filter_panel = DateFilterPanel(self, compact_mode=True)
+        filter_row.addWidget(self.date_filter_panel)
+
+        filter_row.addStretch()
+
+        main_layout.addLayout(filter_row)
 
         # ========== FILE LIST TABLE ==========
         self.table = QTableWidget()
@@ -236,7 +216,7 @@ class MainWindow(QMainWindow):
         header = self.table.horizontalHeader()
 
         # Refresh column (0) – fixed size, square-ish
-        refresh_size = 32  # tweak 32–36 if you want bigger
+        refresh_size = 32
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(0, refresh_size + 4)
 
@@ -247,17 +227,15 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Modified
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Status
 
-        # Make header sections tight so the icon fills the cell
         header.setMinimumHeight(refresh_size + 4)
 
-        # ---------- big refresh icon in first header cell ----------
+        # Refresh icon in first header cell
         refresh_item = QTableWidgetItem()
-        # path relative to this file: /resources/icons/refresh.png
         project_root = Path(__file__).resolve().parent.parent
         refresh_icon_path = project_root / "resources" / "icons" / "refresh.png"
         refresh_item.setIcon(QIcon(str(refresh_icon_path)))
-        refresh_item.setText("")  # icon only
-        refresh_item.setSizeHint(QSize(refresh_size, refresh_size))  # fills ~100% of cell
+        refresh_item.setText("")
+        refresh_item.setSizeHint(QSize(refresh_size, refresh_size))
         self.table.setHorizontalHeaderItem(0, refresh_item)
 
         # Click on header[0] = refresh
@@ -314,7 +292,7 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        right_layout.addWidget(self.table, 1)  # stretch to fill
+        main_layout.addWidget(self.table, 1)  # stretch to fill
 
         # ========== TABLE CONTROL BUTTONS ==========
         btn_layout = QHBoxLayout()
@@ -356,7 +334,7 @@ class MainWindow(QMainWindow):
         """)
         btn_layout.addWidget(self.btn_run)
 
-        right_layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
 
         # ========== PROGRESS SECTION ==========
         self.progress_container = QWidget()
@@ -399,7 +377,7 @@ class MainWindow(QMainWindow):
         progress_layout.addWidget(self.progress_bar)
 
         self.progress_container.hide()
-        right_layout.addWidget(self.progress_container)
+        main_layout.addWidget(self.progress_container)
 
         # ========== CONSOLE OUTPUT ==========
         console_header = QHBoxLayout()
@@ -430,7 +408,7 @@ class MainWindow(QMainWindow):
         console_header.addStretch()
         console_header.addWidget(self.btn_toggle_console)
 
-        right_layout.addLayout(console_header)
+        main_layout.addLayout(console_header)
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
@@ -447,7 +425,30 @@ class MainWindow(QMainWindow):
             }
         """)
         self.log_text.setMaximumHeight(200)
-        right_layout.addWidget(self.log_text)
+        main_layout.addWidget(self.log_text)
+
+    # ---------------------- Settings ----------------------
+
+    def _open_settings(self) -> None:
+        """Open settings dialog."""
+        dialog = SettingsDialog(self.settings, self)
+        dialog.settings_changed.connect(self._on_settings_changed)
+        dialog.exec()
+
+    def _on_settings_changed(self) -> None:
+        """Handle settings changes."""
+        # Update SEQ patterns in validation engine
+        seq_patterns = self.settings.get("seq_auto_valid_patterns", ["1.", "2.", "3.", "10."])
+        set_seq_auto_valid_patterns(seq_patterns)
+
+        # Update source settings
+        self.current_source_type = self.settings.get("input_source_type", "local")
+        self.current_local_path = self.settings.get("input_local_path", INPUT_FOLDER)
+
+        # Reload files
+        self._load_files_from_current_source()
+
+        self._append_log("\n✓ Settings updated and applied\n")
 
     # ---------------------- Console Toggle ----------------------
 
@@ -488,34 +489,6 @@ class MainWindow(QMainWindow):
             self._append_log("⚠️  Drive credentials not found\n")
 
     # ---------------------- Source Management ----------------------
-
-    def _on_source_changed(self, index: int) -> None:
-        source_type = self.combo_source.currentData()
-        self.current_source_type = source_type
-
-        if source_type == "local":
-            self.label_folder_path.show()
-            self.btn_browse_folder.show()
-            self.label_drive_info.hide()
-        else:
-            self.label_folder_path.hide()
-            self.btn_browse_folder.hide()
-            self.label_drive_info.show()
-
-        self._load_files_from_current_source()
-
-    def _browse_local_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(
-            self,
-            "Select Input Folder",
-            self.current_local_path,
-            QFileDialog.Option.ShowDirsOnly
-        )
-
-        if folder:
-            self.current_local_path = folder
-            self.label_folder_path.setText(folder)
-            self._load_files_from_current_source()
 
     def _load_files_from_current_source(self) -> None:
         self.log_text.clear()
@@ -643,26 +616,6 @@ class MainWindow(QMainWindow):
             if item:
                 item.setCheckState(Qt.CheckState.Unchecked)
 
-    # ---------------------- Open Output ----------------------
-
-    def _open_output_folder(self) -> None:
-        from doc_validator.config import DATA_FOLDER
-
-        if not os.path.isdir(DATA_FOLDER):
-            QMessageBox.warning(self, "Error", f"Folder not found:\n{DATA_FOLDER}")
-            return
-
-        try:
-            system = platform.system()
-            if system == "Windows":
-                os.startfile(DATA_FOLDER)
-            elif system == "Darwin":
-                subprocess.Popen(["open", DATA_FOLDER])
-            else:
-                subprocess.Popen(["xdg-open", DATA_FOLDER])
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not open folder:\n{e}")
-
     # ---------------------- Run Processing ----------------------
 
     def _on_run_clicked(self) -> None:
@@ -687,8 +640,6 @@ class MainWindow(QMainWindow):
                 status_item = self.table.item(row, 5)
                 if status_item:
                     status_item.setText("")
-                    # optional: neutral color
-                    # status_item.setForeground(QColor("#CCCCCC"))
 
         self.btn_run.setEnabled(False)
 
@@ -711,7 +662,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_label.setText("Starting...")
 
-        enable_asc = self.asc_checkbox.isChecked()
+        # ASC is always enabled now (removed checkbox)
+        enable_asc = True
 
         self.worker = ProcessingWorker(
             api_key=self.api_key,
@@ -761,7 +713,7 @@ class MainWindow(QMainWindow):
                     status_item.setText("✗ Failed")
                     status_item.setForeground(QColor("#F44336"))
 
-        # Summary, same as before
+        # Summary
         success_count = sum(1 for r in results if r.get("output_file"))
         total = len(results)
         failed_count = total - success_count

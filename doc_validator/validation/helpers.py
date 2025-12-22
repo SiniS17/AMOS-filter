@@ -1,6 +1,7 @@
-# doc_validator/validation/helpers.py
+# doc_validator/validation/helpers.py (UPDATED)
 
 import re
+from typing import List, Optional
 
 from .constants import (
     REF_KEYWORDS,
@@ -35,11 +36,25 @@ IAW_KEYWORD_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Global variable to store custom SEQ patterns from settings
+_seq_auto_valid_patterns: Optional[List[str]] = None
+
+
+def set_seq_auto_valid_patterns(patterns: List[str]) -> None:
+    """
+    Set custom SEQ auto-valid patterns from settings.
+
+    Args:
+        patterns: List of pattern prefixes (e.g., ["1.", "2.", "3.", "10."])
+    """
+    global _seq_auto_valid_patterns
+    _seq_auto_valid_patterns = patterns if patterns else []
+
 
 def is_seq_auto_valid(seq_value):
     """
     Check if SEQ should be automatically marked as Valid.
-    Returns True for SEQ patterns: 1.xx, 2.xx, 3.xx, 10.xx
+    Uses patterns from settings if available, otherwise falls back to defaults.
 
     Args:
         seq_value: The SEQ field value (can be string, float, or int)
@@ -56,15 +71,13 @@ def is_seq_auto_valid(seq_value):
     if not seq_str:
         return False
 
-    # Check for patterns: 1.xx, 2.xx, 3.xx, 10.xx
-    # This handles: "1.1", "1.10", "2.5", "3.12", "10.1", "10.99", etc.
-    if (
-        seq_str.startswith("1.")
-        or seq_str.startswith("2.")
-        or seq_str.startswith("3.")
-        or seq_str.startswith("10.")
-    ):
-        return True
+    # Use custom patterns from settings, or default patterns
+    patterns = _seq_auto_valid_patterns if _seq_auto_valid_patterns is not None else ["1.", "2.", "3.", "10."]
+
+    # Check if SEQ starts with any of the configured patterns
+    for pattern in patterns:
+        if seq_str.startswith(pattern):
+            return True
 
     return False
 
@@ -116,6 +129,7 @@ def fix_common_typos(text: str) -> str:
     t = re.sub(r"\s{2,}", " ", t)
     return t
 
+
 def contains_skip_phrase(text: str) -> bool:
     """Check if text contains phrases that should skip validation (WT/WO cross-reference, etc)."""
     if not isinstance(text, str):
@@ -123,39 +137,24 @@ def contains_skip_phrase(text: str) -> bool:
 
     up = text.upper()
 
-    # 1) Existing skip phrases (your original logic)
+    # 1) Existing skip phrases
     for phrase in SKIP_PHRASES:
         if phrase in up:
             return True
 
-    # -------------------------------------------------
-    # 2) NEW: Cross-Workstep (WT) references
-    # Examples:
-    #   REFER RESULT WT 17
-    #   REFER WT 3
-    # -------------------------------------------------
+    # 2) Cross-Workstep (WT) references
     if "REFER RESULT WT" in up or "REFER WT " in up:
         return True
 
-    # -------------------------------------------------
-    # 3) NEW: Cross-Workorder (WO) references
-    # Examples:
-    #    REFER ( WO : 7`646`970 )
-    #    WO: 8123456
-    # -------------------------------------------------
+    # 3) Cross-Workorder (WO) references
     if re.search(r"\bWO\s*[:\-]\s*[0-9`' ]+", up):
         return True
 
-    # -------------------------------------------------
-    # 4) NEW: WO together with EOD (Engineering Order)
-    # Example:
-    #   PERFORMED REFER ( WO : 7`646`970 )  EOD-787-57-00-0002-R00
-    # -------------------------------------------------
+    # 4) WO together with EOD (Engineering Order)
     if "EOD" in up and re.search(r"\bWO\s*[:\-]\s*[0-9`' ]+", up):
         return True
 
     return False
-
 
 
 def has_referenced_pattern(text: str) -> bool:
@@ -245,7 +244,6 @@ def has_revision(text: str) -> bool:
 
     return False
 
-# Add this new function to doc_validator/validation/helpers.py
 
 def is_seq_9x(seq_value):
     """
