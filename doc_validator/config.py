@@ -47,3 +47,7 @@ ACTION_STEP_SHEET_NAME = "ActionStepControl"
 # Optional per-WO summary sheet from ASC
 ACTION_STEP_SUMMARY_ENABLED_DEFAULT = True
 ACTION_STEP_SUMMARY_SHEET_NAME = "ASC_Summary"
+
+# Still in Beta test
+APP_VERSION = "Beta v1.0"
+APP_LAST_UPDATE = "23 DEC 25"

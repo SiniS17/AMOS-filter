@@ -12,10 +12,11 @@ from typing import Any, Dict, Optional
 class SettingsManager:
     """Manages application settings with JSON persistence."""
 
+    # Default settings will be populated dynamically
     DEFAULT_SETTINGS = {
         # Input source settings
         "input_source_type": "local",  # "local" or "drive"
-        "input_local_path": "",  # Will be set to default INPUT folder
+        "input_local_path": None,  # Will be set to INPUT_FOLDER from config
 
         # SEQ auto-valid patterns
         "seq_auto_valid_patterns": ["1.", "2.", "3.", "10."],
@@ -49,18 +50,33 @@ class SettingsManager:
 
     def load(self) -> None:
         """Load settings from file. Uses defaults if file doesn't exist."""
+        # Import here to avoid circular dependency
+        from doc_validator.config import INPUT_FOLDER
+
+        # Set default input path if not already set
+        if self.DEFAULT_SETTINGS["input_local_path"] is None:
+            self.DEFAULT_SETTINGS["input_local_path"] = INPUT_FOLDER
+
         if self.config_path.exists():
             try:
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     loaded = json.load(f)
                     # Merge with defaults to handle new settings
                     self._settings = {**self.DEFAULT_SETTINGS, **loaded}
+
+                    # If loaded settings don't have input_local_path, set it
+                    if not self._settings.get("input_local_path"):
+                        self._settings["input_local_path"] = INPUT_FOLDER
+
             except Exception as e:
                 print(f"Warning: Could not load settings: {e}")
                 print("Using default settings")
                 self._settings = self.DEFAULT_SETTINGS.copy()
         else:
+            # First run - use defaults and save them
             self._settings = self.DEFAULT_SETTINGS.copy()
+            self.save()  # Save defaults on first run
+            print(f"Created default settings at: {self.config_path}")
 
     def save(self) -> None:
         """Save current settings to file."""

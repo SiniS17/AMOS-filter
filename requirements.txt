@@ -1,3 +1,50 @@
-pandas~=1.5.3
-google-api-python-client
-openpyxl
+# AMOS Documentation Validator - Requirements
+# Python Version: 3.11.x or 3.12.x (3.14 not recommended)
+
+# ============================================
+# Core GUI Framework
+# ============================================
+PyQt6>=6.6.0,<7.0.0
+PyQt6-Qt6>=6.6.0
+PyQt6-sip>=13.6.0
+
+# ============================================
+# Data Processing
+# ============================================
+pandas>=2.0.0,<3.0.0
+openpyxl>=3.1.0,<4.0.0
+xlrd>=2.0.1
+
+# ============================================
+# Google Drive Integration
+# ============================================
+google-api-python-client>=2.0.0,<3.0.0
+google-auth>=2.0.0,<3.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=1.0.0
+
+# ============================================
+# Utilities
+# ============================================
+# Date/time handling (already in Python stdlib, but explicit for clarity)
+python-dateutil>=2.8.0
+
+# Path handling (stdlib, but keeping for reference)
+pathlib>=1.0.1
+
+# ============================================
+# Development Dependencies (Optional)
+# ============================================
+# Uncomment these if you're developing/testing
+
+# pytest>=7.4.0
+# pytest-qt>=4.2.0
+# pytest-cov>=4.1.0
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.5.0
+
+# ============================================
+# Build Dependencies (for creating EXE)
+# ============================================
+# pyinstaller>=6.0.0

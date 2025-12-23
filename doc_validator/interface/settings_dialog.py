@@ -253,16 +253,17 @@ class SettingsDialog(QDialog):
 
     def _load_current_settings(self):
         """Load current settings into UI."""
+        from doc_validator.config import INPUT_FOLDER
+
         # Input source
         source_type = self.settings.get("input_source_type", "local")
         index = self.combo_source.findData(source_type)
         if index >= 0:
             self.combo_source.setCurrentIndex(index)
 
-        # Local path
-        local_path = self.settings.get("input_local_path", "")
+        # Local path - ensure it's never empty
+        local_path = self.settings.get("input_local_path", INPUT_FOLDER)
         if not local_path:
-            from doc_validator.config import INPUT_FOLDER
             local_path = INPUT_FOLDER
         self.line_local_path.setText(local_path)
 
@@ -276,14 +277,17 @@ class SettingsDialog(QDialog):
 
     def _save_and_close(self):
         """Save settings and close dialog."""
+        from doc_validator.config import INPUT_FOLDER
+
         # Save input source
         source_type = self.combo_source.currentData()
         self.settings.set("input_source_type", source_type)
 
-        # Save local path
+        # Save local path - ensure it's never empty
         local_path = self.line_local_path.text().strip()
-        if local_path:
-            self.settings.set("input_local_path", local_path)
+        if not local_path:
+            local_path = INPUT_FOLDER
+        self.settings.set("input_local_path", local_path)
 
         # Save SEQ patterns
         patterns = [

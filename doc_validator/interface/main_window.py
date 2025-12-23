@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
 )
 
-from doc_validator.config import LINK_FILE, INPUT_FOLDER
+from doc_validator.config import LINK_FILE, INPUT_FOLDER, APP_VERSION, APP_LAST_UPDATE
 from doc_validator.core.drive_io import read_credentials_file
 from doc_validator.core.input_source_manager import (
     FileInfo,
@@ -72,9 +72,14 @@ class MainWindow(QMainWindow):
         self.filtered_files: List[FileInfo] = []
         self._status_row_map: dict[str, list[int]] = {}
 
-        # Load source settings
+        # Load source settings with proper defaults
         self.current_source_type: str = self.settings.get("input_source_type", "local")
         self.current_local_path: str = self.settings.get("input_local_path", INPUT_FOLDER)
+
+        # Ensure current_local_path is never empty
+        if not self.current_local_path:
+            self.current_local_path = INPUT_FOLDER
+            self.settings.set("input_local_path", INPUT_FOLDER)
 
         # Worker thread reference
         self.worker: Optional[ProcessingWorker] = None
@@ -158,7 +163,7 @@ class MainWindow(QMainWindow):
         header_layout.addLayout(logo_box)
         header_layout.addStretch()
 
-        version_label = QLabel("Last update: 22 DEC 25")
+        version_label = QLabel(f"Last update: {APP_LAST_UPDATE}")
         version_label.setStyleSheet("color: #888; font-size: 11px;")
         header_layout.addWidget(version_label)
 
@@ -444,6 +449,11 @@ class MainWindow(QMainWindow):
         # Update source settings
         self.current_source_type = self.settings.get("input_source_type", "local")
         self.current_local_path = self.settings.get("input_local_path", INPUT_FOLDER)
+
+        # Ensure path is never empty
+        if not self.current_local_path:
+            self.current_local_path = INPUT_FOLDER
+            self.settings.set("input_local_path", INPUT_FOLDER)
 
         # Reload files
         self._load_files_from_current_source()
