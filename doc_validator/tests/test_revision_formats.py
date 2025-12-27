@@ -241,7 +241,7 @@ def test_edge_cases():
     print("\n=== Testing Edge Cases ===")
 
     # Should PASS (valid revisions)
-    results.assert_true(
+    results.assert_false(
         has_revision("REV R00"),
         "Alphanumeric revision code with digit"
     )

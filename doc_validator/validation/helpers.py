@@ -249,6 +249,19 @@ def has_revision(text: str) -> bool:
         return False
 
     # Standard patterns (faster checks)
+    REV_PATTERN = re.compile(r'\bREV\s*[:\.]?\s*\d+\b', re.IGNORECASE)
+    ISSUE_PATTERN = re.compile(r'\bISSUE\s*[:\.]?\s*\d+\b', re.IGNORECASE)
+    ISSUED_SD_PATTERN = re.compile(r'\bISSUED\s+SD\.?\s*\d+\b', re.IGNORECASE)
+    TAR_PATTERN = re.compile(r'\bTAR\s*\d+\b', re.IGNORECASE)
+    EXP_DATE_PATTERN = re.compile(
+        r'\b(?:EXP|DEADLINE|DUE\s+DATE|REV\s+DATE)\s*[:\.]?\s*\d{1,2}[-/]?[A-Z]{3}[-/]?\d{2,4}\b',
+        re.IGNORECASE,
+    )
+    DEADLINE_DATE_PATTERN = re.compile(
+        r'\b(?:EXP|DEADLINE|DUE\s+DATE|REV\s+DATE)\s*[:\.]?\s*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b',
+        re.IGNORECASE,
+    )
+
     if REV_PATTERN.search(text):
         return True
     if ISSUE_PATTERN.search(text):
@@ -263,31 +276,23 @@ def has_revision(text: str) -> bool:
         return True
 
     # NEW: Flexible 12-character window check after REV
-    # This catches formats like "REV AUG 01/2025" or "REV 01AUG 25"
-    import re
-
-    # Find all occurrences of REV in the text (case-insensitive)
-    rev_matches = re.finditer(r'\bREV\b', text, re.IGNORECASE)
+    # FIXED: Look for "REV" without requiring word boundary after it
+    # This handles both "REV 156" and "REVAUG 01/2025"
+    rev_matches = re.finditer(r'\bREV', text, re.IGNORECASE)
 
     for match in rev_matches:
         # Get position right after "REV"
         start_pos = match.end()
 
         # Extract up to 12 characters after REV
-        # We'll handle whitespace/punctuation more flexibly now
         if start_pos >= len(text):
             continue
 
-        # Skip ONLY whitespace and common separators, but be more lenient
-        # Allow checking content that's directly attached (REV01AUG25)
+        # Skip optional whitespace/separators (0 or more)
+        # This handles both "REV 156" and "REV156" and "REVAUG01/2025"
         search_start = start_pos
-        skipped = 0
-        while search_start < len(text) and skipped < 3:
-            if text[search_start] in ' :\.\-':
-                search_start += 1
-                skipped += 1
-            else:
-                break
+        while search_start < len(text) and text[search_start] in ' :\.\-':
+            search_start += 1
 
         # Extract 12 characters from this position
         window = text[search_start:search_start + 12]
