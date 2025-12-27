@@ -225,10 +225,30 @@ def has_iaw_keyword(text: str) -> bool:
 
 
 def has_revision(text: str) -> bool:
-    """Check if text contains any revision indicator."""
+    """
+    Check if text contains any revision indicator.
+
+    Now includes a flexible 12-character window check after "REV" keyword
+    to catch various date formats and revision patterns.
+
+    Accepts formats like:
+    - REV 156
+    - REV: 156
+    - REV.156
+    - ISSUE 002
+    - ISSUED SD 123
+    - TAR 45
+    - EXP 03JAN25
+    - DEADLINE: 01/11/2025
+    - REV AUG 01/2025
+    - REV 01AUG 25
+    - REV01AUG25 (no space)
+    - REVAUG 01/2025 (no space after REV)
+    """
     if not isinstance(text, str):
         return False
 
+    # Standard patterns (faster checks)
     if REV_PATTERN.search(text):
         return True
     if ISSUE_PATTERN.search(text):
@@ -241,6 +261,78 @@ def has_revision(text: str) -> bool:
         return True
     if DEADLINE_DATE_PATTERN.search(text):
         return True
+
+    # NEW: Flexible 12-character window check after REV
+    # This catches formats like "REV AUG 01/2025" or "REV 01AUG 25"
+    import re
+
+    # Find all occurrences of REV in the text (case-insensitive)
+    rev_matches = re.finditer(r'\bREV\b', text, re.IGNORECASE)
+
+    for match in rev_matches:
+        # Get position right after "REV"
+        start_pos = match.end()
+
+        # Extract up to 12 characters after REV
+        # We'll handle whitespace/punctuation more flexibly now
+        if start_pos >= len(text):
+            continue
+
+        # Skip ONLY whitespace and common separators, but be more lenient
+        # Allow checking content that's directly attached (REV01AUG25)
+        search_start = start_pos
+        skipped = 0
+        while search_start < len(text) and skipped < 3:
+            if text[search_start] in ' :\.\-':
+                search_start += 1
+                skipped += 1
+            else:
+                break
+
+        # Extract 12 characters from this position
+        window = text[search_start:search_start + 12]
+
+        if not window:
+            continue
+
+        # Check if this window contains revision-like content
+        # Valid revision must have:
+        # 1. At least one digit (for numbers or dates)
+        # 2. Optionally, a month name (for date formats)
+
+        # First, check if there's any digit
+        if not re.search(r'\d', window):
+            continue  # No digit = not a revision
+
+        # If we have a digit, check for valid patterns:
+
+        # Pattern 1: Pure numbers (156, 002, 123)
+        # Must have continuous digits (standalone number)
+        if re.match(r'^\d+', window):
+            return True
+
+        # Pattern 2: Date with month name (AUG 01/2025, 01AUG 25, 01AUG25)
+        # Month abbreviations: JAN, FEB, MAR, APR, MAY, JUN, JUL, AUG, SEP, OCT, NOV, DEC
+        if re.search(r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b',
+                     window, re.IGNORECASE):
+            return True
+
+        # Pattern 3: Date-like patterns without word boundaries
+        # Handles compact forms like "01AUG25", "15JAN2025"
+        if re.search(r'\d+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d+',
+                     window, re.IGNORECASE):
+            return True
+
+        # Pattern 4: Month at start followed by digits
+        # Handles "AUG01/2025", "JAN 15/2025"
+        if re.search(r'^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC).*\d',
+                     window, re.IGNORECASE):
+            return True
+
+        # Pattern 5: Standard date formats with slashes/dashes
+        # 01/11/2025, 2025-01-15, etc.
+        if re.search(r'\d+[\/\-]\d+[\/\-]\d+', window):
+            return True
 
     return False
 

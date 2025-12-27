@@ -202,11 +202,31 @@ class MainWindow(QMainWindow):
 
         filter_row.addSpacing(20)
 
-        # Date filter panel (compact, inline) - make it horizontal
+        # Date filter panel (compact, inline)
         self.date_filter_panel = DateFilterPanel(self, compact_mode=True)
         filter_row.addWidget(self.date_filter_panel)
 
         filter_row.addStretch()
+
+        # Open Output button
+        self.btn_open_output = QPushButton("📂 Open Output")
+        self.btn_open_output.clicked.connect(self._open_output_folder)
+        self.btn_open_output.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #e0e0e0;
+                border: 2px solid #444;
+                border-radius: 5px;
+                padding: 6px 12px;
+                font-weight: 500;
+                min-height: 24px;
+            }
+            QPushButton:hover {
+                background-color: #333;
+                border-color: #2196F3;
+            }
+        """)
+        filter_row.addWidget(self.btn_open_output)
 
         main_layout.addLayout(filter_row)
 
@@ -625,6 +645,36 @@ class MainWindow(QMainWindow):
             item = self.table.item(row, 0)
             if item:
                 item.setCheckState(Qt.CheckState.Unchecked)
+
+    # ---------------------- Open Output Folder ----------------------
+
+    def _open_output_folder(self) -> None:
+        """Open the DATA output folder in file explorer."""
+        from doc_validator.config import DATA_FOLDER
+
+        if not os.path.isdir(DATA_FOLDER):
+            QMessageBox.warning(
+                self,
+                "Folder Not Found",
+                f"Output folder does not exist yet:\n{DATA_FOLDER}\n\n"
+                "Process some files first to create the output folder."
+            )
+            return
+
+        try:
+            system = platform.system()
+            if system == "Windows":
+                os.startfile(DATA_FOLDER)
+            elif system == "Darwin":
+                subprocess.Popen(["open", DATA_FOLDER])
+            else:
+                subprocess.Popen(["xdg-open", DATA_FOLDER])
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Could not open folder:\n{e}\n\nFolder path:\n{DATA_FOLDER}"
+            )
 
     # ---------------------- Run Processing ----------------------
 
